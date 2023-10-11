@@ -5,8 +5,17 @@ from paho.mqtt import client as mqtt_client
 from dataclasses import dataclass
 
 #MODBUS
-#Set up modbus #/dev/ttyHS0 /dev/tty.usbserial-A10NBLZ7
-modbusclient = ModbusSerialClient(method='rtu', port='/dev/tty.usbserial-A10NBLZ7', stopbits=1, bytesize=8, parity='N', baudrate=19200, timeout=0.3)
+#Set up modbus
+modbusclient = ModbusSerialClient(
+    method='rtu',
+    port='/dev/tty.usbserial-00810',
+    #port='#/dev/ttyHS0',
+    stopbits=1,
+    bytesize=8,
+    parity='N',
+    baudrate=19200,
+    timeout=0.3
+)
 
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
@@ -15,51 +24,25 @@ def modbusConnect(modbusclient):
             time.sleep(2)
 
 modbusConnect(modbusclient)
-@dataclass
-class LeGrandReading:
-    voltage_l1: float
-    voltage_l2: float
-    voltage_l3: float
-    current_l1: float
-    current_l2: float
-    current_l3: float
-    current_n: float
-    voltage_l1_l2: float
-    voltage_l2_l3: float
-    voltage_l3_l1: float
-    power_active: float
-    power_apparent: float
-    power_reactive: float
-    power_active_sign: bool
-
-def decode_reading() -> LeGrandReading:
-    value = modbusclient.read_holding_registers(int(0x1000), 122, 1)
-    return LeGrandReading(
-        voltage_l1=int(value.registers[1]+(value.registers[0] << 16))/1000,
-        voltage_l2=int(value.registers[3]+(value.registers[2] << 16))/1000,
-        voltage_l3=int(value.registers[5]+(value.registers[4] << 16))/1000,
-        current_l1=int(value.registers[7]+(value.registers[6] << 16))/1000,
-        current_l2=int(value.registers[9]+(value.registers[8] << 16))/1000,
-        current_l3=int(value.registers[11]+(value.registers[10] << 16))/1000,
-        current_n=int(value.registers[13]+(value.registers[12] << 16))/1000,
-        voltage_l1_l2=int(value.registers[15]+(value.registers[14] << 16))/1000,
-        voltage_l2_l3=int(value.registers[17]+(value.registers[16] << 16))/1000,
-        voltage_l3_l1=int(value.registers[19]+(value.registers[18] << 16))/1000,
-        power_active=int(value.registers[21]+(value.registers[20] << 16))/100,
-        power_reactive=int(value.registers[23]+(value.registers[22] << 16))/1000,
-        power_apparent=int(value.registers[25]+(value.registers[24] << 16))/1000,
-        power_active_sign=int(value.registers[26])
-    )
 
 #MQTT
 BROKER = 'mqtt.t3techniek.nl'
 PORT = 1883
-topicData = "test/data"
-topicReset = "test/reset"
+topicData = "ET/emdx/1/data"
+topicReset = "ET/emdx/1/reset"
+topicLog = "ET/emdx/1/log"
+
 USERNAME = 'tobias'
 PASSWORD = 'perensap'
-
 FLAG_EXIT = False
+
+def logMQTT(client, topicLog, logMessage):
+    result = client.publish(topicLog, logMessage)
+    status = result[0]
+    if status == 0:
+        print(f'Send log message to topic `{topicLog}`')
+    else:
+        print(f'Failed to send log message to topic {topicData}')
 
 def resetVoltage():
     try:
@@ -98,13 +81,14 @@ def on_disconnect(client, userdata, rc):
         except Exception as err:
             logging.error("%s. Reconnect failed. Retrying...", err)
 
-
 def on_message(client, userdata, msg):
     if msg.payload.decode() == 'current':
         print("reset current")
+        logMQTT(client,topicLog, "Min/max current has been reset")
         resetCurrent()
     elif msg.payload.decode() == 'voltage':
         print("reset voltage")
+        logMQTT(client,topicLog, "Min/max voltage has been reset")
         resetVoltage()
     else:
         print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
@@ -126,9 +110,9 @@ def publish(client):
             time.sleep(1)
             continue
         value = modbusclient.read_holding_registers(int(0x1000), 122, 1)
-        reading = decode_reading()
-        result = client.publish(topicData, str(reading))
-        print(reading)
+        hexString = ''.join(format(x, '02x') for x in value.registers)
+        print(hexString)
+        result = client.publish(topicData, hexString)
         # result: [0, 1]
         status = result[0]
         if status == 0:
