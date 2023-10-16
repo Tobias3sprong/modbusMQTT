@@ -164,7 +164,7 @@ client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
 time.sleep(2)
 client.loop_start()
 time.sleep(2)
-
+logMQTT(client, topicLog, "Yup, it updates on boot")
 while True:
     if modbusclient.connect() == False:
         logMQTT(client, topicLog, "Modbus initialisation failed")
