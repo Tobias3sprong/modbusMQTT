@@ -1,5 +1,4 @@
 import json
-import logging
 import time
 from datetime import datetime
 from pymodbus.client import ModbusSerialClient
@@ -26,8 +25,6 @@ modbusclient = ModbusSerialClient(
 
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
-        print(modbusclient.connect())
-        print("modbus communication failed")
         logMQTT(client, topicLog, "Modbus initialisation failed")
         time.sleep(2)
 
@@ -47,11 +44,12 @@ USERNAME = 'tobias'
 PASSWORD = 'perensap'
 flag_connected = True
 
+
+
+
+
+
 lastLogMessage = ""
-
-sendInterval = 10
-
-
 def logMQTT(client, topicLog, logMessage):
     global lastLogMessage
     if not logMessage == lastLogMessage:
@@ -59,12 +57,11 @@ def logMQTT(client, topicLog, logMessage):
             "timestamp": time.time(),
             "log": logMessage,
         }
+        print(str(time.time()) + ": " + logMessage)
         lastLogMessage = logMessage
         result = client.publish(topicLog, json.dumps(message))
         status = result[0]
-        if status == 0:
-            print(f'Send log message to topic `{topicLog}`')
-        else:
+        if not status == 0:
             print(f'Failed to send log message to topic {topicData}')
 
 
@@ -82,17 +79,13 @@ def on_connect(client, userdata, flags, rc):
 def on_disconnect(client, userdata, rc):
     print("Disconnected")
     global flag_connected
-    logging.info("Disconnected with result code: %s", rc)
     flag_connected = False
     while True:
-        logging.info("Reconnecting in 10 seconds...")
         time.sleep(10)
         try:
             client.reconnect()
-            logging.info("Reconnected successfully!")
             return
         except Exception as err:
-            logging.error("%s. Reconnect failed. Retrying...", err)
 def resetVoltage():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
@@ -114,6 +107,7 @@ def resetCurrent():
         print("reset!")
         logMQTT(client, topicLog, "Min/max current has been reset")
 
+sendInterval = 10
 def on_message(client, userdata, msg):
     global sendInterval
     if msg.topic == topicReset:
@@ -126,8 +120,12 @@ def on_message(client, userdata, msg):
         else:
             print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
     if msg.topic == topicConfig:
-        config = json.loads(msg.payload.decode())
-        sendInterval = config["sendInterval"]
+        try:
+            config = json.loads(msg.payload.decode())
+            sendInterval = config["sendInterval"]
+            logMQTT(client, topicLog, "Received config file - new config is applied")
+        except:
+            logMQTT(client, topicLog, "Received invalid config message")
 
 def connect_mqtt():
     try:
@@ -142,25 +140,18 @@ def publish(client):
         block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
         ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
         hexString = ''.join(format(x, '02x') for x in block1.registers)
-        print(hexString)
-        print (ct.registers[0])
+        print(str(time.time()) + ": " + hexString + str(ct.registers[0]))
         message = x = {
             "timestamp": time.time(),
             "data": hexString + str(ct.registers[0]),
         }
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
-        if status == 0:
-            print(f'Send message to topic `{topicData}`')
-        else:
+        if not status == 0:
             print(f'Failed to send message to topic {topicData}')
     except:
-        print("value has no attribute")
         logMQTT(client, topicLog, "Modbus connection error - Check wiring or modbus slave")
     time.sleep(sendInterval)
-
-
-
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
@@ -174,17 +165,8 @@ client.loop_start()
 time.sleep(2)
 
 while True:
-    if not client.is_connected():
-        try:
-            print("Trying to connect...")
-        except:
-            print("init mqtt failed")
     if modbusclient.connect() == False:
         logMQTT(client, topicLog, "Modbus initialisation failed")
-        print("hi")
         modbusConnect(modbusclient)
     else:
         publish(client)
-
-    print(flag_connected)
-
