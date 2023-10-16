@@ -1,14 +1,19 @@
+import json
 import logging
 import time
+from datetime import datetime
 from pymodbus.client import ModbusSerialClient
 from paho.mqtt import client as mqtt_client
 from dataclasses import dataclass
 
-#MODBUS
-#Set up modbus
+
+
+# MODBUS
+# Set up modbus
+
 modbusclient = ModbusSerialClient(
     method='rtu',
-    port='/dev/tty.usbserial-00810',
+    port='/dev/tty.usbserial-A10NBLZ7',
     #port='#/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
@@ -17,62 +22,70 @@ modbusclient = ModbusSerialClient(
     timeout=0.3
 )
 
+
+
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
-            print(modbusclient.connect())
-            print("modbus communication failed")
-            time.sleep(2)
+        print(modbusclient.connect())
+        print("modbus communication failed")
+        logMQTT(client, topicLog, "Modbus initialisation failed")
+        time.sleep(2)
 
-modbusConnect(modbusclient)
 
-#MQTT
-BROKER = 'mqtt.t3techniek.nl'
+
+
+# MQTT
+BROKER = '93.119.7.13'
 PORT = 1883
 topicData = "ET/emdx/1/data"
 topicReset = "ET/emdx/1/reset"
+topicConfig = "ET/emdx/1/config"
 topicLog = "ET/emdx/1/log"
+msgCount = 0
 
 USERNAME = 'tobias'
 PASSWORD = 'perensap'
-FLAG_EXIT = False
+flag_connected = True
+
+lastLogMessage = ""
+
+sendInterval = 10
+
 
 def logMQTT(client, topicLog, logMessage):
-    result = client.publish(topicLog, logMessage)
-    status = result[0]
-    if status == 0:
-        print(f'Send log message to topic `{topicLog}`')
-    else:
-        print(f'Failed to send log message to topic {topicData}')
+    global lastLogMessage
+    if not logMessage == lastLogMessage:
+        message = x = {
+            "timestamp": time.time(),
+            "log": logMessage,
+        }
+        lastLogMessage = logMessage
+        result = client.publish(topicLog, json.dumps(message))
+        status = result[0]
+        if status == 0:
+            print(f'Send log message to topic `{topicLog}`')
+        else:
+            print(f'Failed to send log message to topic {topicData}')
 
-def resetVoltage():
-    try:
-        modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
-        modbusclient.write_registers(int(0x2400), int(0x14), 1)
-    except:
-        print("Something went wrong writing modbus registers")
-    else:
-        print("reset!")
-def resetCurrent():
-    try:
-        modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
-        modbusclient.write_registers(int(0x2400), int(0xA), 1)
-    except:
-        print("Something went wrong writing modbus registers")
-    else:
-        print("reset!")
 
 def on_connect(client, userdata, flags, rc):
+    global flag_connected
     if rc == 0 and client.is_connected():
         print("Connected to MQTT Broker!")
+        flag_connected = True
         client.subscribe(topicReset)
+        client.subscribe(topicConfig)
     else:
         print(f'Failed to connect, return code {rc}')
 
+
 def on_disconnect(client, userdata, rc):
+    print("Disconnected")
+    global flag_connected
     logging.info("Disconnected with result code: %s", rc)
-    reconnect_count, reconnect_delay = 0
+    flag_connected = False
     while True:
-        logging.info("Reconnecting in %d seconds...", reconnect_delay)
+        logging.info("Reconnecting in 10 seconds...")
         time.sleep(10)
         try:
             client.reconnect()
@@ -80,58 +93,98 @@ def on_disconnect(client, userdata, rc):
             return
         except Exception as err:
             logging.error("%s. Reconnect failed. Retrying...", err)
+def resetVoltage():
+    try:
+        modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
+        modbusclient.write_registers(int(0x2400), int(0x14), 1)
+    except:
+        print("Something went wrong writing modbus registers")
+        logMQTT(client, topicLog, "Resetting min/max voltage has failed")
+    else:
+        print("reset!")
+        logMQTT(client, topicLog, "Min/max voltage has been reset")
+def resetCurrent():
+    try:
+        modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
+        modbusclient.write_registers(int(0x2400), int(0xA), 1)
+    except:
+        print("Something went wrong writing modbus registers")
+        logMQTT(client, topicLog, "Resetting min/max current has failed")
+    else:
+        print("reset!")
+        logMQTT(client, topicLog, "Min/max current has been reset")
 
 def on_message(client, userdata, msg):
-    if msg.payload.decode() == 'current':
-        print("reset current")
-        logMQTT(client,topicLog, "Min/max current has been reset")
-        resetCurrent()
-    elif msg.payload.decode() == 'voltage':
-        print("reset voltage")
-        logMQTT(client,topicLog, "Min/max voltage has been reset")
-        resetVoltage()
-    else:
-        print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
-
+    global sendInterval
+    if msg.topic == topicReset:
+        if msg.payload.decode() == 'current':
+            print("reset current")
+            resetCurrent()
+        elif msg.payload.decode() == 'voltage':
+            print("reset voltage")
+            resetVoltage()
+        else:
+            print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
+    if msg.topic == topicConfig:
+        config = json.loads(msg.payload.decode())
+        sendInterval = config["sendInterval"]
 
 def connect_mqtt():
-    client = mqtt_client.Client()
-    client.username_pw_set(USERNAME, PASSWORD)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(BROKER, PORT, keepalive=3)
-    client.on_disconnect = on_disconnect
-    return client
+    try:
+
+        return client
+    except Exception as e:
+        print("MQTT connection failed:", e)
+
 
 def publish(client):
-    while not FLAG_EXIT:
-        if not client.is_connected():
-            logging.error("publish: MQTT client is not connected!")
-            time.sleep(1)
-            continue
-        value = modbusclient.read_holding_registers(int(0x1000), 122, 1)
-        hexString = ''.join(format(x, '02x') for x in value.registers)
+    try:
+        block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
+        ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
+        hexString = ''.join(format(x, '02x') for x in block1.registers)
         print(hexString)
-        result = client.publish(topicData, hexString)
-        # result: [0, 1]
+        print (ct.registers[0])
+        message = x = {
+            "timestamp": time.time(),
+            "data": hexString + str(ct.registers[0]),
+        }
+        result = client.publish(topicData, json.dumps(message))
         status = result[0]
         if status == 0:
             print(f'Send message to topic `{topicData}`')
         else:
             print(f'Failed to send message to topic {topicData}')
-        time.sleep(1)
+    except:
+        print("value has no attribute")
+        logMQTT(client, topicLog, "Modbus connection error - Check wiring or modbus slave")
+    time.sleep(sendInterval)
 
-def run():
-    #logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
-    #                    level=logging.DEBUG)
-    client = connect_mqtt()
-    client.loop_start()
-    time.sleep(1)
-    if client.is_connected():
-        publish(client)
+
+
+
+client = mqtt_client.Client()
+client.username_pw_set(USERNAME, PASSWORD)
+client.on_connect = on_connect
+client.on_message = on_message
+client.on_disconnect = on_disconnect  # Moved this line to the connect_mqtt function
+client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
+client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
+time.sleep(2)
+client.loop_start()
+time.sleep(2)
+
+while True:
+    if not client.is_connected():
+        try:
+            print("Trying to connect...")
+        except:
+            print("init mqtt failed")
+    if modbusclient.connect() == False:
+        logMQTT(client, topicLog, "Modbus initialisation failed")
+        print("hi")
+        modbusConnect(modbusclient)
     else:
-        client.loop_stop()
+        publish(client)
 
+    print(flag_connected)
 
-if __name__ == '__main__':
-    run()
