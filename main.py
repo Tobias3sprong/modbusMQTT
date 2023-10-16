@@ -86,6 +86,7 @@ def on_disconnect(client, userdata, rc):
             client.reconnect()
             return
         except Exception as err:
+            print("failed")
 def resetVoltage():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
