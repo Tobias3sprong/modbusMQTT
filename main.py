@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 modbusclient = ModbusSerialClient(
     method='rtu',
-    port='/dev/tty.usbserial-A10NBLZ7',
+    port='/dev/ttyHS0',
     #port='#/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
