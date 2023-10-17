@@ -12,7 +12,7 @@ from paho.mqtt import client as mqtt_client
 modbusclient = ModbusSerialClient(
     method='rtu',
     #port='/dev/tty.usbserial-00810',
-    port='#/dev/ttyHS0',
+    port='/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
     parity='N',
