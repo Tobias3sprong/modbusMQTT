@@ -11,8 +11,8 @@ from paho.mqtt import client as mqtt_client
 
 modbusclient = ModbusSerialClient(
     method='rtu',
-    port='/dev/tty.usbserial-00810',
-    #port='#/dev/ttyHS0',
+    #port='/dev/tty.usbserial-00810',
+    port='#/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -20,8 +20,8 @@ modbusclient = ModbusSerialClient(
     timeout=0.3
 )
 tcpClient = ModbusTcpClient(
-    host="192.168.3.1",
-    #host="localhost",
+    #host="192.168.3.1",
+    host="localhost",
     #port=1025,
     port=502,
     unit_id=1,
