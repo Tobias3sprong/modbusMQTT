@@ -1,9 +1,8 @@
 import json
 import time
-from datetime import datetime
 from pymodbus.client import ModbusSerialClient
+from pymodbus.client import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
-from dataclasses import dataclass
 
 
 
@@ -12,7 +11,7 @@ from dataclasses import dataclass
 
 modbusclient = ModbusSerialClient(
     method='rtu',
-    port='/dev/ttyHS0',
+    port='/dev/tty.usbserial-00810',
     #port='#/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
@@ -20,36 +19,31 @@ modbusclient = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
+tcpClient = ModbusTcpClient(
+    host="192.168.3.1",
+    #host="localhost",
+    #port=1025,
+    port=502,
+    unit_id=1,
+    auto_open=True
+)
 
 
 
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
-        logMQTT(client, topicLog, "Modbus initialisation failed")
+        logMQTT(client, topicLog, "Modbus RTU initialisation failed")
+        time.sleep(2)
+
+
+def modbusTcpConnect(tcpClient):
+    while tcpClient.connect() == False:
+        logMQTT(client, topicLog, "Modbus TCP initialisation failed")
         time.sleep(2)
 
 
 
 
-# MQTT
-BROKER = '93.119.7.13'
-PORT = 1883
-topicData = "ET/emdx/1/data"
-topicReset = "ET/emdx/1/reset"
-topicConfig = "ET/emdx/1/config"
-topicLog = "ET/emdx/1/log"
-msgCount = 0
-
-USERNAME = 'tobias'
-PASSWORD = 'perensap'
-flag_connected = True
-
-
-
-
-
-
-lastLogMessage = ""
 def logMQTT(client, topicLog, logMessage):
     global lastLogMessage
     if not logMessage == lastLogMessage:
@@ -57,7 +51,7 @@ def logMQTT(client, topicLog, logMessage):
             "timestamp": time.time(),
             "log": logMessage,
         }
-        print(str(time.time()) + ": " + logMessage)
+        print(str(time.time()) + "\t->\t" + logMessage)
         lastLogMessage = logMessage
         result = client.publish(topicLog, json.dumps(message))
         status = result[0]
@@ -66,51 +60,48 @@ def logMQTT(client, topicLog, logMessage):
 
 
 def on_connect(client, userdata, flags, rc):
-    global flag_connected
     if rc == 0 and client.is_connected():
-        print("Connected to MQTT Broker!")
-        flag_connected = True
+        logMQTT(client,topicLog, "Connected to broker!")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
-    else:
-        print(f'Failed to connect, return code {rc}')
 
 
 def on_disconnect(client, userdata, rc):
-    print("Disconnected")
-    global flag_connected
-    flag_connected = False
     while True:
         time.sleep(10)
         try:
             client.reconnect()
             return
         except Exception as err:
-            print("failed")
+            print("Failed to reconnect to MQTT")
 def resetVoltage():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
         modbusclient.write_registers(int(0x2400), int(0x14), 1)
     except:
-        print("Something went wrong writing modbus registers")
         logMQTT(client, topicLog, "Resetting min/max voltage has failed")
     else:
-        print("reset!")
         logMQTT(client, topicLog, "Min/max voltage has been reset")
 def resetCurrent():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
         modbusclient.write_registers(int(0x2400), int(0xA), 1)
     except:
-        print("Something went wrong writing modbus registers")
         logMQTT(client, topicLog, "Resetting min/max current has failed")
     else:
-        print("reset!")
         logMQTT(client, topicLog, "Min/max current has been reset")
+
+def rebootModem():
+    try:
+        tcpClient.write_register(206, 1)
+    except:
+        logMQTT(client, topicLog, "Reboot failed")
+    else:
+        logMQTT(client, topicLog, "Rebooting modem...")
 
 sendInterval = 10
 def on_message(client, userdata, msg):
-    global sendInterval
+    global sendInterval, deviceID
     if msg.topic == topicReset:
         if msg.payload.decode() == 'current':
             print("reset current")
@@ -118,14 +109,18 @@ def on_message(client, userdata, msg):
         elif msg.payload.decode() == 'voltage':
             print("reset voltage")
             resetVoltage()
+        elif msg.payload.decode() == 'modem':
+            rebootModem()
         else:
             print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
     if msg.topic == topicConfig:
         try:
             config = json.loads(msg.payload.decode())
             sendInterval = config["sendInterval"]
-            logMQTT(client, topicLog, "Received config file - new config is applied")
-        except:
+            deviceID = config["deviceID"]
+            logMQTT(client, topicLog, "Received config message - new config is applied")
+        except Exception as error:
+            print("An error occurred:", error)  # An error occurred: name 'x' is not defined
             logMQTT(client, topicLog, "Received invalid config message")
 
 def connect_mqtt():
@@ -137,14 +132,18 @@ def connect_mqtt():
 
 
 def publish(client):
+    global deviceID
     try:
         block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
         ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
-        hexString = ''.join(format(x, '02x') for x in block1.registers)
-        print(str(time.time()) + ": " + hexString + str(ct.registers[0]))
+        hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
+        print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
+        tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, 1).registers)
         message = x = {
+            "deviceID" : deviceID,
             "timestamp": time.time(),
-            "data": hexString + str(ct.registers[0]),
+            "rtuData": hexString + str(ct.registers[0]),
+            "tcpData": tcpData
         }
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
@@ -153,6 +152,26 @@ def publish(client):
     except:
         logMQTT(client, topicLog, "Modbus connection error - Check wiring or modbus slave")
     time.sleep(sendInterval)
+
+if tcpClient.connect() == True:
+    IMSIreg = tcpClient.read_holding_registers(348, 8)
+    IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
+
+
+# MQTT
+BROKER = '93.119.7.13'
+PORT = 1883
+topicData = "ET/powerlog/data"
+topicReset = "ET/powerlog/"+IMSI+"/reset"
+topicConfig = "ET/powerlog/"+IMSI+"/config"
+topicLog = "ET/powerlog/"+IMSI+"/log"
+msgCount = 0
+deviceID = 99
+IMSI = 00000000000000000
+USERNAME = 'tobias'
+PASSWORD = 'perensap'
+flag_connected = True
+lastLogMessage = ""
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
@@ -165,10 +184,12 @@ time.sleep(2)
 client.loop_start()
 time.sleep(2)
 
-
 while True:
+    if tcpClient.connect() == False:
+        modbusTcpConnect(tcpClient)
+
+
     if modbusclient.connect() == False:
-        logMQTT(client, topicLog, "Modbus initialisation failed")
         modbusConnect(modbusclient)
     else:
         publish(client)
