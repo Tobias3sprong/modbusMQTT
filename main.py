@@ -1,7 +1,7 @@
 import json
 import time
 from pymodbus.client.serial import ModbusSerialClient
-from pymodbus.client import ModbusTcpClient
+from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
 
@@ -22,9 +22,7 @@ modbusclient = ModbusSerialClient(
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
     host="localhost",
-    port=502,
-    unit_id=1,
-    auto_open=True
+    port=502
 )
 
 
