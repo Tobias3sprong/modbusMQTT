@@ -4,14 +4,10 @@ from pymodbus.client import ModbusSerialClient
 from pymodbus.client import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
-
-
 # MODBUS
-# Set up modbus
-
+# Set up modbus RTU
 modbusclient = ModbusSerialClient(
     method='rtu',
-    #port='/dev/tty.usbserial-00810',
     port='/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
@@ -19,10 +15,9 @@ modbusclient = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
+# Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    #host="192.168.3.1",
     host="localhost",
-    #port=1025,
     port=502,
     unit_id=1,
     auto_open=True
@@ -159,17 +154,18 @@ if tcpClient.connect() == True:
 
 
 # MQTT
-BROKER = '93.119.7.13'
+BROKER = 'mqtt.event-things.io'
 PORT = 1883
-topicData = "ET/powerlog/data"
-topicReset = "ET/powerlog/"+IMSI+"/reset"
-topicConfig = "ET/powerlog/"+IMSI+"/config"
-topicLog = "ET/powerlog/"+IMSI+"/log"
+USERNAME = 'eventthings_client'
+PASSWORD = 'letq9trZSCdXGZj'
+topicData = "ET/powerlogger/data"
+topicReset = "ET/powerlogger/"+IMSI+"/reset"
+topicConfig = "ET/powerlogger/"+IMSI+"/config"
+topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
 IMSI = 00000000000000000
-USERNAME = 'tobias'
-PASSWORD = 'perensap'
+
 flag_connected = True
 lastLogMessage = ""
 
