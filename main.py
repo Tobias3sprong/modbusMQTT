@@ -7,7 +7,7 @@ from paho.mqtt import client as mqtt_client
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    method='rtu',
+    method="rtu",
     port='/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
