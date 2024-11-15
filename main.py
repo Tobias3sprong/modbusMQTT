@@ -1,13 +1,17 @@
 import json
 import time
-from pymodbus.client import ModbusSerialClient
+from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
+
+
+
+
+
 
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    method="rtu",
     port='/dev/ttyHS0',
     stopbits=1,
     bytesize=8,
