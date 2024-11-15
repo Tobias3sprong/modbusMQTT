@@ -22,8 +22,7 @@ modbusclient = ModbusSerialClient(
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
     host="localhost",
-    port=502,
-    unit_id=1
+    port=502
 )
 
 
