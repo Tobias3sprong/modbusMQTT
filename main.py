@@ -22,7 +22,8 @@ modbusclient = ModbusSerialClient(
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
     host="localhost",
-    port=502
+    port=502,
+    unit_id=1
 )
 
 
@@ -59,6 +60,7 @@ def logMQTT(client, topicLog, logMessage):
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         logMQTT(client,topicLog, "Connected to broker!")
+        logMQTT(client,topicLog, "Public IP is: " + WANIP)
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -153,7 +155,9 @@ def publish(client):
 if tcpClient.connect() == True:
     IMSIreg = tcpClient.read_holding_registers(348, 8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-
+    WANIPreg = tcpClient.read_holding_registers(139, 2)
+    WANIP = bytes.fromhex(''.join('{:02x}'.format(b) for b in WANIPreg.registers))[:-1].decode("ASCII")
+    
 
 # MQTT
 BROKER = 'mqtt.event-things.io'
@@ -167,6 +171,7 @@ topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
 IMSI = 00000000000000000
+WANIP
 
 flag_connected = True
 lastLogMessage = ""
