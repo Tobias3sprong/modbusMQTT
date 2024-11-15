@@ -155,7 +155,7 @@ if tcpClient.connect() == True:
     IMSIreg = tcpClient.read_holding_registers(348, 8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     WANIPreg = tcpClient.read_holding_registers(139, 2)
-    WANIP = bytes.fromhex(''.join('{:02x}'.format(b) for b in WANIPreg.registers))[:-1].decode("ASCII")
+    print WANIPreg
     
 
 # MQTT
