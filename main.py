@@ -154,7 +154,7 @@ def publish(client):
 if tcpClient.connect() == True:
     IMSIreg = tcpClient.read_holding_registers(348, 8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-    WANIPreg = tcpClient.read_holding_registers(139, 2, unit=1)
+    WANIPreg = tcpClient.read_holding_registers(139, 2)
     reg_values = WANIPreg.registers
     # Omzetten van registers naar 4 bytes (voor een IPv4-adres)
     wan_ip_bytes = reg_values[0].to_bytes(2, byteorder="big") + reg_values[1].to_bytes(2, byteorder="big")
@@ -175,6 +175,7 @@ topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
 IMSI = 00000000000000000
+
 
 flag_connected = True
 lastLogMessage = ""
