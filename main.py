@@ -153,6 +153,8 @@ def publish(client):
 if tcpClient.connect() == True:
     IMSIreg = tcpClient.read_holding_registers(348, 8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
+    WanIP_registers = tcpClient.read_holding_registers(139,2)
+    print(WanIP_registers)
 
 
 
