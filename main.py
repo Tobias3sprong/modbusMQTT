@@ -59,7 +59,7 @@ def logMQTT(client, topicLog, logMessage):
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         logMQTT(client,topicLog, "Connected to broker!")
-        logMQTT(client,topicLog, "Public IP is: " + WANIP)
+        logMQTT(client,topicLog, f"WAN IP: {wan_ip}")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -154,9 +154,14 @@ def publish(client):
 if tcpClient.connect() == True:
     IMSIreg = tcpClient.read_holding_registers(348, 8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-    WANIPreg = tcpClient.read_holding_registers(139, 2)
-    print(WANIPreg)
-    
+    WANIPreg = tcpClient.read_holding_registers(139, 2, unit=1)
+    reg_values = WANIPreg.registers
+    # Omzetten van registers naar 4 bytes (voor een IPv4-adres)
+    wan_ip_bytes = reg_values[0].to_bytes(2, byteorder="big") + reg_values[1].to_bytes(2, byteorder="big")
+    # Bytes omzetten naar een IPv4-adres
+    wan_ip = ".".join(map(str, wan_ip_bytes))
+    print(f"WAN IP: {wan_ip}")
+
 
 # MQTT
 BROKER = 'mqtt.event-things.io'
