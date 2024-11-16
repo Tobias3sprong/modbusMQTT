@@ -175,7 +175,6 @@ topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
 IMSI = 00000000000000000
-WANIP
 
 flag_connected = True
 lastLogMessage = ""
