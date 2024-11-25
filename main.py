@@ -19,7 +19,7 @@ modbusclient = ModbusSerialClient(
 )
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    host="178.230.168.51",
+    host="localhost",
     port=502
 )
 
