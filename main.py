@@ -17,7 +17,7 @@ modbusclient = ModbusSerialClient(
 )
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    host="localhost",
+    host="178.230.168.51",
     port=502
 )
 
@@ -52,7 +52,7 @@ def logMQTT(client, topicLog, logMessage):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        logMQTT(client,topicLog, "Connected to broker!")
+        logMQTT(client,topicLog, "Connected to broker! Wan IP adress is: " + WanIP)
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -81,7 +81,6 @@ def resetCurrent():
         logMQTT(client, topicLog, "Resetting min/max current has failed")
     else:
         logMQTT(client, topicLog, "Min/max current has been reset")
-
 def rebootModem():
     try:
         tcpClient.write_register(206, 1)
@@ -91,6 +90,7 @@ def rebootModem():
         logMQTT(client, topicLog, "Rebooting modem...")
 
 sendInterval = 10
+
 def on_message(client, userdata, msg):
     global sendInterval, deviceID
     if msg.topic == topicReset:
@@ -127,9 +127,7 @@ def publish(client):
     try:
         block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
         ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
-        hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
-        print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
-        
+        hexString = ''.join('{:04x}'.format(b) for b in block1.registers)        
         tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, 1).registers)
         message = {
             "deviceID": deviceID,
@@ -142,6 +140,8 @@ def publish(client):
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicData}')
+        else:
+            print('Data package send!')
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
@@ -149,12 +149,24 @@ def publish(client):
 
 if tcpClient.connect():
     IMSIreg = tcpClient.read_holding_registers(348, 8)  # Read IMSI registers
+
     if IMSIreg.isError():
         print("Failed to read IMSI from registers.")
     else:
         IMSI_bytes = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))
         IMSI = IMSI_bytes[:-1].decode("ASCII")  # Decode to readable ASCII, remove padding if necessary
         print(f"IMSI: {IMSI}")
+    WanIPreg = tcpClient.read_holding_registers(139, 2)  # WAN IP address registers    
+    if WanIPreg.isError():
+        print("Failed to read WAN IP from registers.")
+        print(WanIPreg)
+        WanIP = "0.0.0.0"  # Default in case of failure
+    else:
+        #Combine the two registers into a 32-bit value
+        wan_ip_int = (WanIPreg.registers[0] << 16) | WanIPreg.registers[1]
+        # Convert to a dotted quad IP string
+        WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
+        print(f"WAN IP: {WanIP}")
 
 
 
