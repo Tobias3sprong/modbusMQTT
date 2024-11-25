@@ -150,15 +150,8 @@ def publish(client):
 
 
 if tcpClient.connect():
-    IMSIreg = tcpClient.read_holding_registers(348, 8)  # Read IMSI registers
-
-    if IMSIreg.isError():
-        print("Failed to read IMSI from registers.")
-    else:
-        IMSI_bytes = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))
-        IMSI = IMSI_bytes[:-1].decode("ASCII")  # Decode to readable ASCII, remove padding if necessary
-        print(f"IMSI: {IMSI}")
-    time.sleep(2)
+    IMSIreg = tcpClient.read_holding_registers(348, 8)
+    IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     WanIPreg = tcpClient.read_holding_registers(139, 2)  # WAN IP address registers    
     if WanIPreg.isError():
         print("Failed to read WAN IP from registers.")
