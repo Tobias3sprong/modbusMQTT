@@ -123,27 +123,29 @@ def connect_mqtt():
 
 
 def publish(client):
-    global deviceID
+    global deviceID, IMSI
     try:
         block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
         ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
         hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
         print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
+        
         tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, 1).registers)
-        message = x = {
-            "deviceID" : deviceID,
+        message = {
+            "deviceID": deviceID,
             "timestamp": time.time(),
             "rtuData": hexString + str(ct.registers[0]),
             "tcpData": tcpData,
-            "IMSI": IMSI
+            "IMSI": IMSI  # Add the full IMSI as a readable string
         }
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicData}')
-    except:
-        logMQTT(client, topicLog, "Modbus connection error - Check wiring or modbus slave")
+    except Exception as e:
+        logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
+
 
 if tcpClient.connect():
     IMSIreg = tcpClient.read_holding_registers(348, 8)  # Read IMSI registers
