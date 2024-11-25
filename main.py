@@ -17,7 +17,7 @@ modbusclient = ModbusSerialClient(
 )
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    host="178.230.168.51",
+    host="localhost",
     port=502
 )
 
@@ -149,7 +149,6 @@ def publish(client):
 
 if tcpClient.connect():
     IMSIreg = tcpClient.read_holding_registers(348, 8)  # Read IMSI registers
-
     if IMSIreg.isError():
         print("Failed to read IMSI from registers.")
     else:
@@ -171,6 +170,7 @@ if tcpClient.connect():
 
 
 # MQTT
+IMSI = 00000000000000000
 BROKER = 'mqtt.event-things.io'
 PORT = 1883
 USERNAME = 'eventthings_client'
@@ -181,7 +181,7 @@ topicConfig = "ET/powerlogger/"+IMSI+"/config"
 topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
-IMSI = 00000000000000000
+
 
 
 flag_connected = True
