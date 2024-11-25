@@ -54,7 +54,7 @@ def logMQTT(client, topicLog, logMessage):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        logMQTT(client,topicLog, "Connected to broker!")
+        logMQTT(client,topicLog, "Connected to broker! IP Adress is: "+ WanIP)
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
