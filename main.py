@@ -5,6 +5,8 @@ from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
 
+IMSI = 00000000000000000
+
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
@@ -183,7 +185,6 @@ topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
 
-IMSI = 00000000000000000
 
 flag_connected = True
 lastLogMessage = ""
