@@ -5,10 +5,6 @@ from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
 
-
-
-
-
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
@@ -37,8 +33,6 @@ def modbusTcpConnect(tcpClient):
     while tcpClient.connect() == False:
         logMQTT(client, topicLog, "Modbus TCP initialisation failed")
         time.sleep(2)
-
-
 
 
 def logMQTT(client, topicLog, logMessage):
@@ -140,7 +134,8 @@ def publish(client):
             "deviceID" : deviceID,
             "timestamp": time.time(),
             "rtuData": hexString + str(ct.registers[0]),
-            "tcpData": tcpData
+            "tcpData": tcpData,
+            "IMSI": IMSI
         }
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
@@ -150,11 +145,14 @@ def publish(client):
         logMQTT(client, topicLog, "Modbus connection error - Check wiring or modbus slave")
     time.sleep(sendInterval)
 
-if tcpClient.connect() == True:
-    IMSIreg = tcpClient.read_holding_registers(348, 8)
-    IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-    WanIP_registers = tcpClient.read_holding_registers(139,2)
-    print(WanIP_registers)
+if tcpClient.connect():
+    IMSIreg = tcpClient.read_holding_registers(348, 8)  # Read IMSI registers
+    if IMSIreg.isError():
+        print("Failed to read IMSI from registers.")
+    else:
+        IMSI_bytes = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))
+        IMSI = IMSI_bytes[:-1].decode("ASCII")  # Decode to readable ASCII, remove padding if necessary
+        print(f"IMSI: {IMSI}")
 
 
 
