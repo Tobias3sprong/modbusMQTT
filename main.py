@@ -32,9 +32,11 @@ def modbusConnect(modbusclient):
 
 
 def modbusTcpConnect(tcpClient):
-    while tcpClient.connect() == False:
-        logMQTT(client, topicLog, "Modbus TCP initialisation failed")
-        time.sleep(2)
+    print("Attempting to connect to Modbus TCP server...")
+    while not tcpClient.connect():
+        logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
+        time.sleep(2)  # Wait for 2 seconds before retrying
+    logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
 
 
 def logMQTT(client, topicLog, logMessage):
@@ -167,6 +169,7 @@ if tcpClient.connect():
 
 
 # MQTT
+IMSI = "00000000000000000"
 BROKER = 'mqtt.event-things.io'
 PORT = 1883
 USERNAME = 'eventthings_client'
@@ -177,7 +180,7 @@ topicConfig = "ET/powerlogger/"+IMSI+"/config"
 topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
 deviceID = 99
-IMSI = 00000000000000000
+
 
 flag_connected = True
 lastLogMessage = ""
