@@ -40,16 +40,16 @@ def modbusTcpConnect(tcpClient):
 def logMQTT(client, topicLog, logMessage):
     global lastLogMessage
     if not logMessage == lastLogMessage:
-        message = x = {
+        message = {
             "timestamp": time.time(),
             "log": logMessage,
         }
         print(str(time.time()) + "\t->\t" + logMessage)
         lastLogMessage = logMessage
         result = client.publish(topicLog, json.dumps(message))
-        status = result[0]
-        if not status == 0:
-            print(f'Failed to send log message to topic {topicData}')
+        status = result.rc
+        if status != 0:
+            print(f'Failed to send log message to topic {topicLog}')
 
 
 def on_connect(client, userdata, flags, rc):
@@ -130,7 +130,6 @@ def publish(client):
         ct = modbusclient.read_holding_registers(int(0x1200),count=1, slave=1)
         hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
         print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
-        
         tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, count=1).registers)
         RSSI = int(tcpData, 16) - 0x10000 if int(tcpData, 16) > 0x7FFF else int(tcpData, 16)
         message = {
