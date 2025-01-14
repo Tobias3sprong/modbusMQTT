@@ -126,12 +126,12 @@ def connect_mqtt():
 def publish(client):
     global deviceID, IMSI
     try:
-        block1 = modbusclient.read_holding_registers(int(0x1000), 122, 1)
-        ct = modbusclient.read_holding_registers(int(0x1200), 1, 1)
+        block1 = modbusclient.read_holding_registers(int(0x1000), count=122, slave=1)
+        ct = modbusclient.read_holding_registers(int(0x1200),count=1, slave=1)
         hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
         print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
         
-        tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, 1).registers)
+        tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, count=1).registers)
         message = {
             "deviceID": deviceID,
             "timestamp": time.time(),
