@@ -4,6 +4,7 @@ from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
+
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
@@ -167,7 +168,7 @@ if tcpClient.connect():
 
 
 # MQTT
-IMSI = "00000000000000000"
+
 BROKER = 'mqtt.event-things.io'
 PORT = 1883
 USERNAME = 'eventthings_client'
