@@ -136,7 +136,7 @@ def publish(client):
             "timestamp": time.time(),
             "rtuData": hexString + str(ct.registers[0]),
             "RSSI": RSSI,
-            "IMSI": IMSI,  # Add the full IMSI as a readable string
+            "IMSI": int(IMSI),  # Add the full IMSI as a readable string
             "IP": WanIP
         }
         result = client.publish(topicData, json.dumps(message))
