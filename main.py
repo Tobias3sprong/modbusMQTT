@@ -149,6 +149,7 @@ def publish(client):
 
 
 if tcpClient.connect():
+    global IMSI
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    

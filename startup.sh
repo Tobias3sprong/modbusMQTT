@@ -22,9 +22,7 @@ wait_for_internet
 # Update and install required packages using opkg
 echo "Updating opkg and installing necessary packages..."
 opkg update
-opkg install python3-light
-opkg install python3-pip
-opkg install git git-http
+opkg install python3-light python3-pip git git-http
 
 # Install required Python packages
 echo "Installing Python dependencies..."
