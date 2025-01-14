@@ -4,9 +4,6 @@ from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
-
-
-
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
@@ -36,7 +33,7 @@ def modbusTcpConnect(tcpClient):
     while not tcpClient.connect():
         logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
         time.sleep(2)  # Wait for 2 seconds before retrying
-    logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
+    logMQTT(client, topicLog, "Successfully connected to Modbus TCP server! WAN IP is: "+ WanIP)
 
 
 def logMQTT(client, topicLog, logMessage):
@@ -56,7 +53,7 @@ def logMQTT(client, topicLog, logMessage):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        logMQTT(client,topicLog, "Connected to broker! IP Adress is: "+ WanIP)
+        logMQTT(client,topicLog, "Connected to broker!")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -152,9 +149,9 @@ def publish(client):
 
 
 if tcpClient.connect():
-    IMSIreg = tcpClient.read_holding_registers(348, 8)
+    IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-    WanIPreg = tcpClient.read_holding_registers(139, 2)  # WAN IP address registers    
+    WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
     if WanIPreg.isError():
         print("Failed to read WAN IP from registers.")
         print(WanIPreg)
@@ -199,7 +196,6 @@ time.sleep(2)
 while True:
     if tcpClient.connect() == False:
         modbusTcpConnect(tcpClient)
-
 
     if modbusclient.connect() == False:
         modbusConnect(modbusclient)
