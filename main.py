@@ -192,12 +192,17 @@ client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
 time.sleep(2)
 client.loop_start()
 time.sleep(2)
+try:
+    while True:
+        if tcpClient.connect() == False:
+            modbusTcpConnect(tcpClient)
 
-while True:
-    if tcpClient.connect() == False:
-        modbusTcpConnect(tcpClient)
+        if modbusclient.connect() == False:
+            modbusConnect(modbusclient)
+        else:
+            publish(client)
+except Exception as e:
+    print(f"Error: {e}")
+    tcpClient.close()
+    modbusclient.close()
 
-    if modbusclient.connect() == False:
-        modbusConnect(modbusclient)
-    else:
-        publish(client)
