@@ -94,7 +94,7 @@ def rebootModem():
 sendInterval = 10
 
 def on_message(client, userdata, msg):
-    global sendInterval, deviceID
+    global sendInterval
     if msg.topic == topicReset:
         if msg.payload.decode() == 'current':
             print("reset current")
@@ -110,7 +110,6 @@ def on_message(client, userdata, msg):
         try:
             config = json.loads(msg.payload.decode())
             sendInterval = config["sendInterval"]
-            deviceID = config["deviceID"]
             logMQTT(client, topicLog, "Received config message - new config is applied")
         except Exception as error:
             print("An error occurred:", error)  # An error occurred: name 'x' is not defined
@@ -125,7 +124,7 @@ def connect_mqtt():
 
 
 def publish(client):
-    global deviceID, IMSI
+    global deviceID, IMSI, WanIP
     try:
         block1 = modbusclient.read_holding_registers(int(0x1000), count=122, slave=1)
         ct = modbusclient.read_holding_registers(int(0x1200),count=1, slave=1)
@@ -133,12 +132,13 @@ def publish(client):
         print(str(time.time()) + "\t->\t" + hexString + str(ct.registers[0]))
         
         tcpData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, count=1).registers)
+        RSSI = int(tcpData, 16) - 0x10000 if int(tcpData, 16) > 0x7FFF else int(tcpData, 16)
         message = {
-            "deviceID": deviceID,
             "timestamp": time.time(),
             "rtuData": hexString + str(ct.registers[0]),
-            "tcpData": tcpData,
-            "IMSI": IMSI  # Add the full IMSI as a readable string
+            "RSSI": RSSI,
+            "IMSI": IMSI,  # Add the full IMSI as a readable string
+            "IP:": WanIP
         }
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
@@ -150,7 +150,7 @@ def publish(client):
 
 
 if tcpClient.connect():
-    global IMSI
+    global IMSI, WanIP
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
@@ -178,7 +178,7 @@ topicReset = "ET/powerlogger/"+IMSI+"/reset"
 topicConfig = "ET/powerlogger/"+IMSI+"/config"
 topicLog = "ET/powerlogger/"+IMSI+"/log"
 msgCount = 0
-deviceID = 99
+
 
 
 flag_connected = True
