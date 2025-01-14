@@ -205,4 +205,6 @@ except Exception as e:
     print(f"Error: {e}")
     tcpClient.close()
     modbusclient.close()
-
+except KeyboardInterrupt :
+    tcpClient.close()
+    modbusclient.close()
