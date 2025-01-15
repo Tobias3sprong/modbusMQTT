@@ -56,4 +56,4 @@ git clone https://github.com/Tobias3sprong/modbusMQTT.git
 
 # Run the Python script
 echo "Running the Python script..."
-python modbusMQTT/main.py
+#python modbusMQTT/main.py
