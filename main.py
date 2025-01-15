@@ -74,8 +74,8 @@ def on_disconnect(client, userdata, rc):
             print("Failed to reconnect to MQTT")
 def resetVoltage():
     try:
-        modbusclient.write_register(0x2700, 0x5AA5, slave=1)
-        modbusclient.write_register(0x2400, 0x14, slave=1)
+        modbusclient.write_registers(int(0x2700), [0x5AA5], slave=1)
+        modbusclient.write_registers(int(0x2400), [0x14], slave=1)
     except Exception as e:
         logMQTT(client, topicLog, f"Resetting min/max voltage has failed: {e}")
     else:
