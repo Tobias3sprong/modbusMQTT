@@ -174,7 +174,7 @@ if tcpClient.connect():
 # MQTT
 
 BROKER = credentials["broker"] 
-PORT = 1883
+PORT = credentials["port"]
 USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
 topicData = "ET/powerlogger/data"
