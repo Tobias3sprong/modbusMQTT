@@ -6,6 +6,7 @@ from paho.mqtt import client as mqtt_client
 
 # Load credentials
 json_file_path = r".secrets/credentials.json"
+
 with open(json_file_path, "r") as f:
     credentials = json.load(f)
 
@@ -19,12 +20,13 @@ modbusclient = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
-
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
     host="localhost",
     port=502
 )
+
+
 
 def modbus_connect(modbusclient):
     while modbusclient.connect() == False:
@@ -78,7 +80,7 @@ def reset_voltage():
         log_mqtt(client, topicLog, "Resetting min/max voltage has failed")
     else:
         log_mqtt(client, topicLog, "Min/max voltage has been reset")
-def reset_current():
+def resetCurrent():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
         modbusclient.write_registers(int(0x2400), int(0xA), 1)
@@ -86,7 +88,7 @@ def reset_current():
         log_mqtt(client, topicLog, "Resetting min/max current has failed")
     else:
         log_mqtt(client, topicLog, "Min/max current has been reset")
-def reboot_modem():
+def rebootModem():
     try:
         tcpClient.write_register(206, 1)
     except:
@@ -96,17 +98,17 @@ def reboot_modem():
 
 sendInterval = 10
 
-def on_message_mqtt(client, msg):
+def on_message(client, userdata, msg):
     global sendInterval
     if msg.topic == topicReset:
         if msg.payload.decode() == 'current':
             print("reset current")
-            reset_current()
+            resetCurrent()
         elif msg.payload.decode() == 'voltage':
             print("reset voltage")
             reset_voltage()
         elif msg.payload.decode() == 'modem':
-            reboot_modem()
+            rebootModem()
         else:
             print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
     if msg.topic == topicConfig:
@@ -118,7 +120,7 @@ def on_message_mqtt(client, msg):
             print("An error occurred:", error)  # An error occurred: name 'x' is not defined
             log_mqtt(client, topicLog, "Received invalid config message")
 
-def connect_to_mqtt():
+def connect_mqtt():
     try:
 
         return client
@@ -189,8 +191,8 @@ lastLogMessage = ""
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect_mqtt
-client.on_message = on_message_mqtt
-client.on_disconnect = on_disconnect_mqtt  # Moved this line to the connect_to_mqtt function
+client.on_message = on_message
+client.on_disconnect = on_disconnect_mqtt  # Moved this line to the connect_mqtt function
 client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
 client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
 time.sleep(2)
