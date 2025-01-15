@@ -4,7 +4,7 @@ from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
-#l Load credentials
+# Load credentials
 json_file_path = r".secrets/credentials.json"
 
 with open(json_file_path, "r") as f:
@@ -28,21 +28,21 @@ tcpClient = ModbusTcpClient(
 
 
 
-def modbusConnect(modbusclient):
+def modbus_connect(modbusclient):
     while modbusclient.connect() == False:
-        logMQTT(client, topicLog, "Modbus RTU initialisation failed")
+        log_mqtt(client, topicLog, "Modbus RTU initialisation failed")
         time.sleep(2)
 
 
-def modbusTcpConnect(tcpClient):
+def modbus_tcp_connect(tcpClient):
     print("Attempting to connect to Modbus TCP server...")
     while not tcpClient.connect():
-        logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
+        log_mqtt(client, topicLog, "Modbus TCP initialisation failed, retrying...")
         time.sleep(2)  # Wait for 2 seconds before retrying
-    logMQTT(client, topicLog, "Successfully connected to Modbus TCP server! WAN IP is: "+ WanIP)
+    log_mqtt(client, topicLog, "Successfully connected to Modbus TCP server! WAN IP is: "+ WanIP)
 
 
-def logMQTT(client, topicLog, logMessage):
+def log_mqtt(client, topicLog, logMessage):
     global lastLogMessage
     if not logMessage == lastLogMessage:
         message = {
@@ -57,14 +57,14 @@ def logMQTT(client, topicLog, logMessage):
             print(f'Failed to send log message to topic {topicLog}')
 
 
-def on_connect(client, userdata, flags, rc):
+def on_connect_mqtt(client, rc):
     if rc == 0 and client.is_connected():
-        logMQTT(client,topicLog, "Connected to broker!")
+        log_mqtt(client,topicLog, "Connected to broker!")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
 
-def on_disconnect(client, userdata, rc):
+def on_disconnect_mqtt(client):
     while True:
         time.sleep(10)
         try:
@@ -72,55 +72,55 @@ def on_disconnect(client, userdata, rc):
             return
         except Exception as err:
             print("Failed to reconnect to MQTT")
-def resetVoltage():
+def reset_voltage():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
         modbusclient.write_registers(int(0x2400), int(0x14), 1)
     except:
-        logMQTT(client, topicLog, "Resetting min/max voltage has failed")
+        log_mqtt(client, topicLog, "Resetting min/max voltage has failed")
     else:
-        logMQTT(client, topicLog, "Min/max voltage has been reset")
-def resetCurrent():
+        log_mqtt(client, topicLog, "Min/max voltage has been reset")
+def reset_current():
     try:
         modbusclient.write_registers(int(0x2700), int(0x5AA5), 1)
         modbusclient.write_registers(int(0x2400), int(0xA), 1)
     except:
-        logMQTT(client, topicLog, "Resetting min/max current has failed")
+        log_mqtt(client, topicLog, "Resetting min/max current has failed")
     else:
-        logMQTT(client, topicLog, "Min/max current has been reset")
-def rebootModem():
+        log_mqtt(client, topicLog, "Min/max current has been reset")
+def reboot_modem():
     try:
         tcpClient.write_register(206, 1)
     except:
-        logMQTT(client, topicLog, "Reboot failed")
+        log_mqtt(client, topicLog, "Reboot failed")
     else:
-        logMQTT(client, topicLog, "Rebooting modem...")
+        log_mqtt(client, topicLog, "Rebooting modem...")
 
 sendInterval = 10
 
-def on_message(client, userdata, msg):
+def on_message_mqtt(client, msg):
     global sendInterval
     if msg.topic == topicReset:
         if msg.payload.decode() == 'current':
             print("reset current")
-            resetCurrent()
+            reset_current()
         elif msg.payload.decode() == 'voltage':
             print("reset voltage")
-            resetVoltage()
+            reset_voltage()
         elif msg.payload.decode() == 'modem':
-            rebootModem()
+            reboot_modem()
         else:
             print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
     if msg.topic == topicConfig:
         try:
             config = json.loads(msg.payload.decode())
             sendInterval = config["sendInterval"]
-            logMQTT(client, topicLog, "Received config message - new config is applied")
+            log_mqtt(client, topicLog, "Received config message - new config is applied")
         except Exception as error:
             print("An error occurred:", error)  # An error occurred: name 'x' is not defined
-            logMQTT(client, topicLog, "Received invalid config message")
+            log_mqtt(client, topicLog, "Received invalid config message")
 
-def connect_mqtt():
+def connect_to_mqtt():
     try:
 
         return client
@@ -149,7 +149,7 @@ def publish(client):
         if not status == 0:
             print(f'Failed to send message to topic {topicData}')
     except Exception as e:
-        logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
+        log_mqtt(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
 
 
@@ -190,9 +190,9 @@ lastLogMessage = ""
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
-client.on_connect = on_connect
-client.on_message = on_message
-client.on_disconnect = on_disconnect  # Moved this line to the connect_mqtt function
+client.on_connect = on_connect_mqtt
+client.on_message = on_message_mqtt
+client.on_disconnect = on_disconnect_mqtt  # Moved this line to the connect_to_mqtt function
 client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
 client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
 time.sleep(2)
@@ -201,10 +201,10 @@ time.sleep(2)
 try:
     while True:
         if tcpClient.connect() == False:
-            modbusTcpConnect(tcpClient)
+            modbus_tcp_connect(tcpClient)
 
         if modbusclient.connect() == False:
-            modbusConnect(modbusclient)
+            modbus_connect(modbusclient)
         else:
             publish(client)
 except Exception as e:
