@@ -6,7 +6,6 @@ from paho.mqtt import client as mqtt_client
 
 # Load credentials
 json_file_path = r".secrets/credentials.json"
-
 with open(json_file_path, "r") as f:
     credentials = json.load(f)
 
@@ -20,13 +19,12 @@ modbusclient = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
+
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
     host="localhost",
     port=502
 )
-
-
 
 def modbus_connect(modbusclient):
     while modbusclient.connect() == False:
