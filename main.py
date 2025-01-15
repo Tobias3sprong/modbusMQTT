@@ -4,6 +4,11 @@ from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 
+#l Load credentials
+json_file_path = r".secrets/credentials.json"
+
+with open(json_file_path, "r") as f:
+    credentials = json.load(f)
 
 # MODBUS
 # Set up modbus RTU
@@ -168,10 +173,10 @@ if tcpClient.connect():
 
 # MQTT
 
-BROKER = 'mqtt.event-things.io'
+BROKER = credentials["broker"] 
 PORT = 1883
-USERNAME = 'eventthings_client'
-PASSWORD = 'letq9trZSCdXGZj'
+USERNAME = credentials["username"]
+PASSWORD = credentials["password"]
 topicData = "ET/powerlogger/data"
 topicReset = "ET/powerlogger/"+IMSI+"/reset"
 topicConfig = "ET/powerlogger/"+IMSI+"/config"
