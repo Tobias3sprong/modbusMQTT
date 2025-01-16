@@ -4,6 +4,7 @@ REQUIRED_PACKAGES="python3-light python3-pip git git-http"
 
 for pkg in $REQUIRED_PACKAGES; do
   if ! opkg list-installed | grep -q "^$pkg "; then
+    opkg update
     echo "Installing $pkg..."
     opkg install "$pkg"
   else
