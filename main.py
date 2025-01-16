@@ -82,8 +82,8 @@ def resetVoltage():
         logMQTT(client, topicLog, "Min/max voltage has been reset")
 def resetCurrent():
     try:
-        modbusclient.write_registers(int(0x2700), [int(0x5AA5)], slave=1)
-        modbusclient.write_registers(int(0x2400), [int(0xA)], slave=1)
+        modbusclient.write_registers(int(0x2700), [0x5AA5], slave=1)
+        modbusclient.write_registers(int(0x2400), [0xA], slave=1)
     except Exception as e:
         logMQTT(client, topicLog, f"Resetting min/max current has failed: {e}")
     else:
