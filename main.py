@@ -139,7 +139,7 @@ def publish(client):
         RSSI = int(tcpData, 16) - 0x10000 if int(tcpData, 16) > 0x7FFF else int(tcpData, 16)
         message = {
             "timestamp": time.time(),
-            "rtuData": hexString + str(ct.registers[0]),
+            "rtuData": hexString + ct.registers[0],
             "RSSI": RSSI,
             "IMSI": int(IMSI),  # Add the full IMSI as a readable string
             "IP": WanIP,
