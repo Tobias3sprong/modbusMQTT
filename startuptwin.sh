@@ -54,7 +54,7 @@ fi
 
 # Clone the repository
 $echo "Cloning the repository..."
-#git clone https://github.com/Tobias3sprong/modbusMQTT.git
+git clone https://github.com/Tobias3sprong/modbusMQTT.git
 
 # Run the Python script
 echo "Running the Python script..."
