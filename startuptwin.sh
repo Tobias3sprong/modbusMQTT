@@ -53,9 +53,9 @@ if [ -d "modbusMQTT" ]; then
 fi
 
 # Clone the repository
-echo "Cloning the repository..."
-git clone https://github.com/Tobias3sprong/modbusMQTT.git
+$echo "Cloning the repository..."
+#git clone https://github.com/Tobias3sprong/modbusMQTT.git
 
 # Run the Python script
-echo "Running the Python script..."
-python modbusMQTT/main.py
+#echo "Running the Python script..."
+#python modbusMQTT/main.py
