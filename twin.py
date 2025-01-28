@@ -132,9 +132,9 @@ def publish(client):
     global deviceID, IMSI, WanIP
     try:
         # Resultaten van de drie requests
-        response1 = modbusclient.read_holding_registers(2, count=125, slave=3)
-        response2 = modbusclient.read_holding_registers(162, count=6, slave=3)
-        response3 = modbusclient.read_holding_registers(3000, count=16, slave=3)
+        response2 = modbusclient.read_holding_registers(2, count=125, slave=3)
+        response3 = modbusclient.read_holding_registers(162, count=6, slave=3)
+        response1 = modbusclient.read_holding_registers(3000, count=16, slave=3)
 
         # Registers samenvoegen
         combined_registers = response1.registers + response2.registers + response3.registers
