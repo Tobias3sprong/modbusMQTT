@@ -142,9 +142,10 @@ def publish(client):
         block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
         response4 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
+        response5 = modbusclient.read_holding_registers(248, count=108, slave=3)  #Second block
+        block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
         message = {
@@ -153,6 +154,7 @@ def publish(client):
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
+            "dataBlock4": block4,
             #"RSSI": RSSI,
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
