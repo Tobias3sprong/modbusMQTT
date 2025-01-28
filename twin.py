@@ -144,6 +144,7 @@ def publish(client):
         hexString = ''.join('{:04x}'.format(b) for b in combined_registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
+        print(combined_registers)
         print(hexString)
 
         # Omzetten naar string (utf-16 decoding)
