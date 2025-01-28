@@ -144,7 +144,6 @@ def publish(client):
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        print(combined_registers)
 
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
@@ -158,7 +157,7 @@ def publish(client):
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
             "FW": "0.7.0"
-        }
+        } 
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
         if not status == 0:
