@@ -142,10 +142,9 @@ def publish(client):
         # Registers samenvoegen
         combined_registers = response2.registers + response3.registers
         hexString = ''.join('{:04x}'.format(b) for b in combined_registers)
-        print(combined_registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        print(byte_data)
+        print(hexString)
 
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
