@@ -158,7 +158,10 @@ def publish(client):
             #"IP": WanIP,
             "FW": "0.7.0"
         }
-        print(message)
+        result = client.publish(topicData, json.dumps(message))
+        status = result[0]
+        if not status == 0:
+            print(f'Failed to send message to topic {topicData}')
 
         # Gecombineerde registers printen
         #print(combined_registers)
@@ -191,10 +194,10 @@ BROKER = credentials["broker"]
 PORT = credentials["port"]
 USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
-topicData = "ET/powerlogger/data"
-topicReset = "ET/powerlogger/"+IMSI+"/reset"
-topicConfig = "ET/powerlogger/"+IMSI+"/config"
-topicLog = "ET/powerlogger/"+IMSI+"/log"
+topicData = "ET/genlogger/data"
+topicReset = "ET/genlogger/"+IMSI+"/reset"
+topicConfig = "ET/genlogger/"+IMSI+"/config"
+topicLog = "ET/genlogger/"+IMSI+"/log"
 msgCount = 0
 
 
