@@ -131,8 +131,16 @@ def connect_mqtt():
 def publish(client):
     global deviceID, IMSI, WanIP
     try:
-        gendata = modbusclient.read_holding_registers(40003, count=2, slave=3)
-        print(gendata)
+        # Resultaten van de drie requests
+        response1 = modbusclient.read_holding_registers(2, count=125, slave=3)
+        response2 = modbusclient.read_holding_registers(162, count=6, slave=3)
+        response3 = modbusclient.read_holding_registers(3000, count=16, slave=3)
+
+        # Registers samenvoegen
+        combined_registers = response1.registers + response2.registers + response3.registers
+
+        # Gecombineerde registers printen
+        print(combined_registers)
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
