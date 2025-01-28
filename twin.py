@@ -142,6 +142,16 @@ def publish(client):
 
         # Gecombineerde registers printen
         print(combined_registers)
+
+        byte_data = b''.join(struct.pack('>H', reg) for reg in combined_registers)
+
+        # Omzetten naar string (utf-16 decoding)
+        decoded_string = byte_data.decode('utf-16').strip('\x00')
+
+        print(decoded_string)
+
+        # Gecombineerde registers printen
+        #print(combined_registers)
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
