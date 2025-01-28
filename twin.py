@@ -137,10 +137,11 @@ def publish(client):
         response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
 
         response2 = modbusclient.read_holding_registers(12, count=6, slave=3) #First block
-        response3 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
+        response3 = modbusclient.read_holding_registers(103, count=21, slave=3)  #Second block
+        #response3 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
 
         # Registers samenvoegen
-        combined_registers = response2.registers# + response3.registers
+        combined_registers = response2.registers + response3.registers
         hexString = ''.join('{:04x}'.format(b) for b in combined_registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
