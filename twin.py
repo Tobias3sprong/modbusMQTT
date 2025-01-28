@@ -135,6 +135,7 @@ def publish(client):
         # Resultaten van de drie requests
 
         response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
+
         response2 = modbusclient.read_holding_registers(12, count=125, slave=3) #First block
         response3 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
 
@@ -144,11 +145,10 @@ def publish(client):
         print(combined_registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
+        print(byte_data)
 
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
-
-        print(decoded_string)
         message = {
             "timestamp": time.time(),
             "gensetName": decoded_string,
