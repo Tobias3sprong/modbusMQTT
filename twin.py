@@ -135,6 +135,12 @@ def publish(client):
         response2 = modbusclient.read_holding_registers(12, count=125, slave=3)
         response3 = modbusclient.read_holding_registers(162, count=6, slave=3)
         response1 = modbusclient.read_holding_registers(3000, count=16, slave=3)
+        byte_data = b''.join(struct.pack('>H', reg) for reg in response1)
+
+        # Omzetten naar string (utf-16 decoding)
+        decoded_string = byte_data.decode('utf-16').strip('\x00')
+
+        print(decoded_string)
 
         # Registers samenvoegen
         combined_registers = response1.registers + response2.registers + response3.registers
