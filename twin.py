@@ -1,5 +1,6 @@
 import json
 import time
+import struct
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
