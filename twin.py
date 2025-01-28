@@ -97,7 +97,7 @@ def rebootModem():
     else:
         logMQTT(client, topicLog, "Rebooting modem...")
 
-sendInterval = 10
+sendInterval = 5
 
 def on_message(client, userdata, msg):
     global sendInterval
