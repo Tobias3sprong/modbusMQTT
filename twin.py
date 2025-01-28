@@ -133,23 +133,32 @@ def publish(client):
     global deviceID, IMSI, WanIP
     try:
         # Resultaten van de drie requests
-        #response2 = modbusclient.read_holding_registers(12, count=125, slave=3)
-        #response3 = modbusclient.read_holding_registers(162, count=6, slave=3)
-        response1 = modbusclient.read_holding_registers(3000, count=8, slave=3)
-        
+
+        response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
+        response2 = modbusclient.read_holding_registers(12, count=125, slave=3) #First block
+        response3 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
 
         # Registers samenvoegen
-        combined_registers = response1.registers# + response2.registers + response3.registers
-
-        # Gecombineerde registers printen
+        combined_registers = response2.registers + response3.registers
+        hexString = ''.join('{:04x}'.format(b) for b in combined_registers)
         print(combined_registers)
 
-        byte_data = b''.join(struct.pack('>H', reg) for reg in combined_registers)
+        byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
 
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-16').strip('\x00')
 
         print(decoded_string)
+        message = {
+            "timestamp": time.time(),
+            "gensetName": decoded_string,
+            "comapData": hexString,
+            #"RSSI": RSSI,
+            #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
+            #"IP": WanIP,
+            "FW": "0.7.0"
+        }
+        print(message)
 
         # Gecombineerde registers printen
         #print(combined_registers)
