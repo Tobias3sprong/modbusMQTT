@@ -146,7 +146,7 @@ def publish(client):
         combined_registers = response1.registers + response2.registers + response3.registers
 
         # Gecombineerde registers printen
-        print(combined_registers)
+        #print(combined_registers)
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
     time.sleep(sendInterval)
