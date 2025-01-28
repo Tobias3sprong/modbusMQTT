@@ -146,7 +146,7 @@ def publish(client):
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
 
         # Omzetten naar string (utf-16 decoding)
-        decoded_string = byte_data.decode('utf-16').strip('\x00')
+        decoded_string = byte_data.decode('utf-8').strip('\x00')
 
         print(decoded_string)
         message = {
