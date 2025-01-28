@@ -136,24 +136,26 @@ def publish(client):
 
         response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
 
-        response2 = modbusclient.read_holding_registers(12, count=6, slave=3) #First block
-        response3 = modbusclient.read_holding_registers(103, count=21, slave=3)  #Second block
-        response4 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
-
         # Registers samenvoegen
         combined_registers = response2.registers + response3.registers + response4.registers
-        hexString = ''.join('{:04x}'.format(b) for b in combined_registers)
+        response2 = modbusclient.read_holding_registers(12, count=6, slave=3) #First block
+        block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
+        response3 = modbusclient.read_holding_registers(103, count=21, slave=3)  #Second block
+        block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
+        response4 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
+        block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
         print(combined_registers)
-        print(hexString)
 
         # Omzetten naar string (utf-16 decoding)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
         message = {
             "timestamp": time.time(),
             "gensetName": decoded_string,
-            "comapData": hexString,
+            "dataBlock1": block1,
+            "dataBlock2": block2,
+            "dataBlock3": block3,
             #"RSSI": RSSI,
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
