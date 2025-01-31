@@ -125,7 +125,6 @@ def modbusMessageB():
             print(f"Error: {e}")    
 def teltonikaMessage():
     try:
-        RSSI = teltonika.read_holding_registers(3,count=42) #GPS Latitude and Longitude
         latlon = teltonika.read_holding_registers(143,count=4) #GPS Latitude and Longitude
         teltonika.close()
 
