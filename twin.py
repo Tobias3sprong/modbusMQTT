@@ -124,9 +124,8 @@ def modbusMessageB():
             print(f"Error: {e}")    
 def teltonikaMessage():
     try:
-        IMSIreg = teltonika.read_holding_registers(348,count=8)
-        IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-        print(IMSI)
+        lat = teltonika.read_holding_registers(143,count=2)
+        print(lat.registers)
     except Exception as e:
         print(f"Error: {e}")
 
