@@ -131,7 +131,7 @@ def teltonikaMessage():
             latlon = response.registers  # Extract the register values
         else:
             raise ValueError("No registers in response") # Raise an error if there are no registers
-
+        teltonika.close()
         # Combine the registers into a single 32-bit float value (big-endian) and unpack it to a float value (latitude)
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
