@@ -176,7 +176,7 @@ def publish(client):
 
 
 if tcpClient.connect():
-    global IMSI, WanIP, gpsLat, gpsLong
+    global IMSI, WanIP
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     #WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
@@ -191,7 +191,7 @@ if tcpClient.connect():
     #    # Convert to a dotted quad IP string
     #    WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
         #print(f"WAN IP: {WanIP}")
-    print(f"GPS Lat: {gpslat.registers[0]}")
+
 
 
 
