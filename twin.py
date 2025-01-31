@@ -134,6 +134,7 @@ try:
     while True:
         modbusMessageA()
         modbusMessageB()
+        teltonikaMessage()
         time.sleep(1)
 except Exception as e:
     print(f"Error: {e}")
