@@ -9,7 +9,7 @@ from paho.mqtt import client as mqtt_client
 # MODBUS
 # Set up modbus RTU
 comapA = ModbusSerialClient(
-    port='/dev/ttyUSB10',
+    port='/dev/ttyUSB0',
     stopbits=1,
     bytesize=8,
     parity='N',
