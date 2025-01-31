@@ -5,6 +5,16 @@ from struct import unpack
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
+#l Load credentials
+json_file_path = r".secrets/credentials.json"
+with open(json_file_path, "r") as f:
+    credentials = json.load(f)
+
+
+def on_connect(client, userdata, flags, rc):
+    if rc == 0 and client.is_connected():
+        print("Connected to MQTT broker")
+
 
 
 # MODBUS
@@ -120,6 +130,10 @@ def modbusMessageB():
             "FW": "0.7.0",
         #    "gpsLat": gpsLat.registers[0] +
         }
+        result = client.publish(topicData, json.dumps(message))
+        status = result.rc
+        if status != 0:
+            print(f'Failed to send log message to topic {topicData}')
         print(message)
     except Exception as e:
             print(f"Error: {e}")    
@@ -146,6 +160,26 @@ def teltonikaMessage():
     except Exception as e:
         print(f"Error: {e}")
 
+BROKER = credentials["broker"] 
+PORT = credentials["port"]
+USERNAME = credentials["username"]
+PASSWORD = credentials["password"]
+topicData = "ET/genlogger/data"
+msgCount = 0
+
+
+
+flag_connected = True
+lastLogMessage = ""
+
+client = mqtt_client.Client()
+client.username_pw_set(USERNAME, PASSWORD)
+client.on_connect = on_connect
+#client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
+client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
+time.sleep(2)
+client.loop_start()
+time.sleep(2)
 
 try:
     while True:
