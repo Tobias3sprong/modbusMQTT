@@ -155,8 +155,6 @@ def publish(client):
             "dataBlock2": block2,
             "dataBlock3": block3,
             "dataBlock4": block4,
-            "gpsLat": gpsLat,
-            "gpsLong": gpsLong,
             #"RSSI": RSSI,
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
@@ -179,10 +177,6 @@ if tcpClient.connect():
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
-    gpsLatReg = tcpClient.read_holding_registers(143,count=2)  # GPS Latitude registers
-    gpsLongReg = tcpClient.read_holding_registers(145,count=2)  # GPS Longitude registers
-    gpsLat = (gpsLatReg.registers[0] << 16) | gpsLatReg.registers[1]
-    gpsLong = (gpsLongReg.registers[0] << 16) | gpsLongReg.registers[1]
     if WanIPreg.isError():
         print("Failed to read WAN IP from registers.")
         print(WanIPreg)
