@@ -16,6 +16,7 @@ comapA = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
+comapAslave = 3
 
 comapB = ModbusSerialClient(
     port='/dev/ttyUSB1',
@@ -25,6 +26,7 @@ comapB = ModbusSerialClient(
     baudrate=19200,
     timeout=0.3
 )
+comapBslave = 4
 
 # Set up modbus TCP
 teltonika = ModbusTcpClient(
@@ -56,18 +58,18 @@ def modbusTcpConnect(teltonika):
 def modbusMessageA():
     try:
         # Read the genset name
-        response1 = comapA.read_holding_registers(3000, count=8, slave=4) #Genset Name
+        response1 = comapA.read_holding_registers(3000, count=8, slave=comapAslave) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
 
         # Read the data blocks
-        response2 = comapA.read_holding_registers(12, count=6, slave=4) #First block
+        response2 = comapA.read_holding_registers(12, count=6, slave=comapAslave) #First block
         block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
-        response3 = comapA.read_holding_registers(103, count=21, slave=4)  #Second block
+        response3 = comapA.read_holding_registers(103, count=21, slave=comapAslave)  #Second block
         block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
-        response4 = comapA.read_holding_registers(162, count=6, slave=4)  #Second block
+        response4 = comapA.read_holding_registers(162, count=6, slave=comapAslave)  #Second block
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
-        response5 = comapA.read_holding_registers(248, count=108, slave=4)  #Second block
+        response5 = comapA.read_holding_registers(248, count=108, slave=comapAslave)  #Second block
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
         message = {
@@ -90,18 +92,18 @@ def modbusMessageA():
 def modbusMessageB():
     try:
         # Read the genset name
-        response1 = comapB.read_holding_registers(3000, count=8, slave=4) #Genset Name
+        response1 = comapB.read_holding_registers(3000, count=8, slave=comapBslave) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
 
         # Read the data blocks
-        response2 = comapB.read_holding_registers(12, count=6, slave=4) #First block
+        response2 = comapB.read_holding_registers(12, count=6, slave=comapBslave) #First block
         block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
-        response3 = comapB.read_holding_registers(103, count=21, slave=4)  #Second block
+        response3 = comapB.read_holding_registers(103, count=21, slave=comapBslave)  #Second block
         block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
-        response4 = comapB.read_holding_registers(162, count=6, slave=4)  #Second block
+        response4 = comapB.read_holding_registers(162, count=6, slave=comapBslave)  #Second block
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
-        response5 = comapB.read_holding_registers(248, count=108, slave=4)  #Second block
+        response5 = comapB.read_holding_registers(248, count=108, slave=comapBslave)  #Second block
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
         message = {
