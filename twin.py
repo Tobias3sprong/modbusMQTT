@@ -176,6 +176,8 @@ if tcpClient.connect():
     global IMSI, WanIP, gpsLat, gpsLong
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
+    gpsLat = tcpClient.read_holding_registers(143, count=2)
+    gpsLong = tcpClient.read_holding_registers(145, count=2)
     WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
     if WanIPreg.isError():
         print("Failed to read WAN IP from registers.")
@@ -186,6 +188,8 @@ if tcpClient.connect():
         wan_ip_int = (WanIPreg.registers[0] << 16) | WanIPreg.registers[1]
         # Convert to a dotted quad IP string
         WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
+        print(gpsLat.registers)
+        print(gpsLong.registers)
         print(f"WAN IP: {WanIP}")
 
 
