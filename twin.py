@@ -123,20 +123,31 @@ def modbusMessageB():
         print(message)
     except Exception as e:
             print(f"Error: {e}")    
+            
 def teltonikaMessage():
     try:
-        latlon = teltonika.read_holding_registers(143,count=4) #GPS Latitude and Longitude
+        response = teltonika.read_holding_registers(143, count=4)  # Read 4 registers
         teltonika.close()
 
-        # Combine the registers into a single 32-bit value (Modbus is big-endian by default)
+        if hasattr(response, 'registers'):
+            latlon = response.registers  # Extract the register values
+        else:
+            raise ValueError("No registers in response")
+
+        # Ensure we have at least 2 registers for latitude conversion
+        if len(latlon) < 2:
+            raise ValueError("Insufficient registers received for latitude")
+
+        # Combine the registers into a single 32-bit float value (big-endian)
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
-        latitude = unpack('>f', bytes_data)[0]  # '>' = big-endian, 'f' = 32-bit float
+        latitude = unpack('>f', bytes_data)[0]  # '>' = big-endian float
 
         print(f"Latitude: {latitude}")
 
     except Exception as e:
         print(f"Error: {e}")
+
 
 try:
     while True:
