@@ -128,21 +128,24 @@ def teltonikaMessage():
     try:
         response = teltonika.read_holding_registers(143, count=4)  # Read 4 registers
         teltonika.close()
-
         if hasattr(response, 'registers'):
             latlon = response.registers  # Extract the register values
         else:
-            raise ValueError("No registers in response")
+            raise ValueError("No registers in response") # Raise an error if there are no registers
 
-        # Combine the registers into a single 32-bit float value (big-endian)
+        # Combine the registers into a single 32-bit float value (big-endian) and unpack it to a float value (latitude)
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]  # '>' = big-endian float
-
+        # Repeat for the longitude
         combined = (latlon[2] << 16) | latlon[3]
         bytes_data = combined.to_bytes(4, byteorder='big')
         longitude = unpack('>f', bytes_data)[0]  # '>' = big-endian float
         print(f"Latitude: {latitude}" + f"Longitude: {longitude}")
+        IMSIreg = teltonika.read_holding_registers(348,count=8)
+        IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
+        print(f"IMSI: {IMSI}")
+        teltonika.close()
 
     except Exception as e:
         print(f"Error: {e}")
