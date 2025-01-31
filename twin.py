@@ -18,7 +18,7 @@ modbusclient = ModbusSerialClient(
     stopbits=1,
     bytesize=8,
     parity='N',
-    baudrate=9600,
+    baudrate=19200,
     timeout=0.3
 )
 # Set up modbus TCP
