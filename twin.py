@@ -141,10 +141,6 @@ def teltonikaMessage():
         bytes_data = combined.to_bytes(4, byteorder='big')
         longitude = unpack('>f', bytes_data)[0]  # '>' = big-endian float
         print(f"Latitude: {latitude}" + f"Longitude: {longitude}")
-
-        IMSIreg = teltonika.read_holding_registers(348,count=8)
-        IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
-        print(f"IMSI: {IMSI}")
         teltonika.close()
 
     except Exception as e:
@@ -153,8 +149,8 @@ def teltonikaMessage():
 
 try:
     while True:
-#        modbusMessageA()
-#        modbusMessageB()
+        modbusMessageA()
+        modbusMessageB()
         teltonikaMessage()
         time.sleep(1)
 except Exception as e:
