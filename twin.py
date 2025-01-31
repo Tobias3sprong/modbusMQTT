@@ -148,7 +148,7 @@ def publish(client):
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
 
-        gpsLat = tcpClient.read_holding_registers(143, count=2)
+        #gpsLat = tcpClient.read_holding_registers(143, count=2)
 
         message = {
             "timestamp": time.time(),
@@ -161,7 +161,7 @@ def publish(client):
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
             "FW": "0.7.0",
-            "gpsLat": gpsLat.registers[0]
+        #    "gpsLat": gpsLat.registers[0] +
         } 
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
