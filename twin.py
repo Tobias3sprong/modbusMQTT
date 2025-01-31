@@ -125,6 +125,7 @@ def modbusMessageB():
 def teltonikaMessage():
     try:
         lat = teltonika.read_holding_registers(143,count=2)
+        teltonika.close()
         print(lat.registers)
     except Exception as e:
         print(f"Error: {e}")
