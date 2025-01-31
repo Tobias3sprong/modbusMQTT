@@ -1,6 +1,7 @@
 import json
 import time
 import struct
+from struct import unpack
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
@@ -124,9 +125,20 @@ def modbusMessageB():
             print(f"Error: {e}")    
 def teltonikaMessage():
     try:
-        lat = teltonika.read_holding_registers(143,count=2)
+        RSSI = teltonika.read_holding_registers(3,count=42) #GPS Latitude and Longitude
+        latlon = teltonika.read_holding_registers(143,count=4) #GPS Latitude and Longitude
         teltonika.close()
-        print(lat.registers)
+
+        # Combine the registers into a single 32-bit value (Modbus is big-endian by default)
+        combined = (latlon[0] << 16) | latlon[1]
+        bytes_data = combined.to_bytes(4, byteorder='big')
+        latitude = unpack('>f', bytes_data)[0]  # '>' = big-endian, 'f' = 32-bit float
+
+        print(f"Latitude: {latitude}")
+
+        message = {
+            "latitude": 
+        }
     except Exception as e:
         print(f"Error: {e}")
 
