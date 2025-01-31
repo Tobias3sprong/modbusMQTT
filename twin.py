@@ -132,9 +132,9 @@ def teltonikaMessage():
 
 try:
     while True:
-        modbusMessageA()
-        modbusMessageB()
+#        modbusMessageA()
+#        modbusMessageB()
         teltonikaMessage()
-        time.sleep(1)
+        time.sleep(0)
 except Exception as e:
     print(f"Error: {e}")
