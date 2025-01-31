@@ -188,7 +188,9 @@ if tcpClient.connect():
         wan_ip_int = (WanIPreg.registers[0] << 16) | WanIPreg.registers[1]
         # Convert to a dotted quad IP string
         WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
+        time.sleep(2)
         print(gpsLat.registers)
+        time.sleep(2)
         print(gpsLong.registers)
         print(f"WAN IP: {WanIP}")
 
