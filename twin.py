@@ -127,6 +127,6 @@ try:
     while True:
         modbusMessageA()
         modbusMessageB()
-        time.sleep(10)
+        time.sleep(1)
 except Exception as e:
     print(f"Error: {e}")
