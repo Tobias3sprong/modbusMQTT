@@ -144,6 +144,6 @@ try:
 #        modbusMessageA()
 #        modbusMessageB()
         teltonikaMessage()
-        time.sleep(0)
+        time.sleep(1)
 except Exception as e:
     print(f"Error: {e}")
