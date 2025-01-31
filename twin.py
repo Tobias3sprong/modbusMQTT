@@ -14,7 +14,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyUSB0',
+    port='/dev/ttyUSB1',
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -133,18 +133,18 @@ def publish(client):
     global deviceID, IMSI, WanIP, gpsLat, gpsLong
     try:
         # Read the genset name
-        response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
+        response1 = modbusclient.read_holding_registers(3000, count=8, slave=4) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
         decoded_string = byte_data.decode('utf-8').strip('\x00')
 
         # Read the data blocks
-        response2 = modbusclient.read_holding_registers(12, count=6, slave=3) #First block
+        response2 = modbusclient.read_holding_registers(12, count=6, slave=4) #First block
         block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
-        response3 = modbusclient.read_holding_registers(103, count=21, slave=3)  #Second block
+        response3 = modbusclient.read_holding_registers(103, count=21, slave=4)  #Second block
         block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
-        response4 = modbusclient.read_holding_registers(162, count=6, slave=3)  #Second block
+        response4 = modbusclient.read_holding_registers(162, count=6, slave=4)  #Second block
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
-        response5 = modbusclient.read_holding_registers(248, count=108, slave=3)  #Second block
+        response5 = modbusclient.read_holding_registers(248, count=108, slave=4)  #Second block
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
 
