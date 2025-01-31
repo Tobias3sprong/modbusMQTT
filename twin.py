@@ -136,9 +136,6 @@ def teltonikaMessage():
 
         print(f"Latitude: {latitude}")
 
-        message = {
-            "latitude": 
-        }
     except Exception as e:
         print(f"Error: {e}")
 
