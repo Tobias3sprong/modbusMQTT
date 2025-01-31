@@ -146,7 +146,7 @@ def publish(client):
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        # Omzetten naar string (utf-16 decoding)
+        # Omzetten naar string (utf-16 decoding) as
         decoded_string = byte_data.decode('utf-8').strip('\x00')
         message = {
             "timestamp": time.time(),
