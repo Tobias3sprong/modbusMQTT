@@ -178,16 +178,16 @@ if tcpClient.connect():
     #IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     #WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
     gpslat = tcpClient.read_holding_registers(143, count=2)
-    if WanIPreg.isError():
-        print("Failed to read WAN IP from registers.")
-        print(WanIPreg)
-        WanIP = "0.0.0.0"  # Default in case of failure
-    else:
-        #Combine the two registers into a 32-bit value
-        wan_ip_int = (WanIPreg.registers[0] << 16) | WanIPreg.registers[1]
-        # Convert to a dotted quad IP string
-        WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
-        print(f"WAN IP: {WanIP}")
+    #if WanIPreg.isError():
+    #    print("Failed to read WAN IP from registers.")
+    #    print(WanIPreg)
+    #    WanIP = "0.0.0.0"  # Default in case of failure
+    #else:
+    #    #Combine the two registers into a 32-bit value
+    #    wan_ip_int = (WanIPreg.registers[0] << 16) | WanIPreg.registers[1]
+    #    # Convert to a dotted quad IP string
+    #    WanIP = '.'.join(str((wan_ip_int >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
+    #    print(f"WAN IP: {WanIP}")
     print(f"GPS Lat: {gpslat.registers[0]}")
 
 
