@@ -132,10 +132,12 @@ def connect_mqtt():
 def publish(client):
     global deviceID, IMSI, WanIP, gpsLat, gpsLong
     try:
-        # Resultaten van de drie requests
-
+        # Read the genset name
         response1 = modbusclient.read_holding_registers(3000, count=8, slave=3) #Genset Name
+        byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
+        decoded_string = byte_data.decode('utf-8').strip('\x00')
 
+        # Read the data blocks
         response2 = modbusclient.read_holding_registers(12, count=6, slave=3) #First block
         block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
         response3 = modbusclient.read_holding_registers(103, count=21, slave=3)  #Second block
@@ -145,9 +147,9 @@ def publish(client):
         response5 = modbusclient.read_holding_registers(248, count=108, slave=3)  #Second block
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
-        byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        # Omzetten naar string (utf-16 decoding) as
-        decoded_string = byte_data.decode('utf-8').strip('\x00')
+
+        gpsLat = tcpClient.read_holding_registers(143, count=2)
+
         message = {
             "timestamp": time.time(),
             "gensetName": decoded_string,
@@ -158,7 +160,8 @@ def publish(client):
             #"RSSI": RSSI,
             #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
             #"IP": WanIP,
-            "FW": "0.7.0"
+            "FW": "0.7.0",
+            "gpsLat": gpsLat.registers[0]
         } 
         result = client.publish(topicData, json.dumps(message))
         status = result[0]
@@ -177,7 +180,7 @@ if tcpClient.connect():
     IMSIreg = tcpClient.read_holding_registers(348,count=8)
     IMSI = bytes.fromhex(''.join('{:02x}'.format(b) for b in IMSIreg.registers))[:-1].decode("ASCII")
     #WanIPreg = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers    
-    gpslat = tcpClient.read_holding_registers(143, count=2)
+    
     #if WanIPreg.isError():
     #    print("Failed to read WAN IP from registers.")
     #    print(WanIPreg)
