@@ -46,14 +46,9 @@ teltonika = ModbusTcpClient(
     port=502
 )
 
-def modbusConnect(ComapA):
-    while ComapA.connect() == False:
-        print("Modbus Set A initialisation failed")
-        time.sleep(2)
-
-def modbusConnect(ComapB):
-    while ComapB.connect() == False:
-        print("Modbus Set B initialisation failed")
+def modbusConnect(comap):
+    while comap.connect() == False:
+        print("Modbus initialisation failed")
         time.sleep(2)
 
 def modbusTcpConnect(teltonika):
