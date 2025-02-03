@@ -50,12 +50,12 @@ def modbusConnect(comap):
     print(f"Attempting to connect to {comap}")
     while comap.connect() == False:
         print("Modbus initialisation failed")
-        time.sleep(2)
+        time.sleep(1)
 
 def modbusTcpConnect(teltonika):
     print("Attempting to connect to Modbus TCP server...")
     while not teltonika.connect():
-        time.sleep(2)  # Wait for 2 seconds before retrying
+        time.sleep(1)  # Wait for 2 seconds before retrying
 
 
 
