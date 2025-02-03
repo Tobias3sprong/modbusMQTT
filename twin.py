@@ -164,17 +164,32 @@ client.connect(BROKER, PORT, keepalive=10)
 client.loop_start()
 
 def comap_loop(comap):
-    # Establish initial connections
+    # Establish initial connection on the bus.
     modbusConnect(comap)
-    slave_id = discover_slave_id(client, start=1, end=10)
+    slave_id = discover_slave_id(comap, start=1, end=10)
     if slave_id is None:
         print("No slave found. Exiting.")
         return
     while True:
         try:
             modbusMessage(comap, slave_id)
-        except Exception:
-            # Reconnect on error
+        except Exception as e:
+            print(f"Error occurred: {e}. Reconnecting...")
+            modbusConnect(comap)
+        time.sleep(1)
+
+def comap_loop(comap):
+    # Establish initial connection on the bus.
+    modbusConnect(comap)
+    slave_id = discover_slave_id(comap, start=1, end=10)
+    if slave_id is None:
+        print("No slave found. Exiting.")
+        return
+    while True:
+        try:
+            modbusMessage(comap, slave_id)
+        except Exception as e:
+            print(f"Error occurred: {e}. Reconnecting...")
             modbusConnect(comap)
         time.sleep(1)
 
