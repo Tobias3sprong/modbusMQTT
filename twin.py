@@ -25,8 +25,6 @@ def on_disconnect(client, userdata, rc):
         except Exception as e:
             print(f"Reconnect failed: {e}")
 
-routerSerial = ""    
-
 # MODBUS
 # Set up modbus RTU
 comapA = ModbusSerialClient(
@@ -101,7 +99,6 @@ def modbusMessage(comap, slaveID):
 
         message = {
             "timestamp": time.time(),
-            "routerSerial": routerSerial,
             "gensetName": decoded_string,
             "dataBlock1": block1,
             "dataBlock2": block2,
@@ -116,7 +113,6 @@ def modbusMessage(comap, slaveID):
         raise
 
 def teltonikaMessage():
-    global routerSerial
     try:
         response = teltonika.read_holding_registers(143, count=4)
         if not hasattr(response, 'registers'):
