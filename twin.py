@@ -105,7 +105,7 @@ def modbusMessageB():
         # Read the genset name
         response1 = comapB.read_holding_registers(3000, count=8, slave=comapBslave) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        decoded_string = byte_data.decode('utf-8').strip('\x00')
+        decoded_string = byte_data.decode('utf-8')
 
         # Read the data blocks
         response2 = comapB.read_holding_registers(12, count=6, slave=comapBslave) #First block
@@ -119,7 +119,7 @@ def modbusMessageB():
 
         message = {
             "timestamp": time.time(),
-            "gensetName": decoded_string,
+            "gensetName": decoded_string.strip('\x00'),
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
