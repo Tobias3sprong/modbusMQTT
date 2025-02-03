@@ -16,7 +16,14 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         print("Connected to MQTT broker")
 
-
+def on_disconnect(client, userdata, rc):
+    print(f"MQTT disconnected with result code: {rc}")
+    if rc != 0:
+        print("Unexpected disconnection. Attempting to reconnect...")
+        try:
+            client.reconnect()
+        except Exception as e:
+            print(f"Reconnect failed: {e}")
 
 # MODBUS
 # Set up modbus RTU
@@ -48,19 +55,17 @@ teltonika = ModbusTcpClient(
 
 def modbusConnect(comap):
     print(f"Attempting to connect to {comap}")
-    while comap.connect() == False:
+    # Keep trying until connection is successful
+    while not comap.connect():
         print("Modbus initialisation failed")
         time.sleep(1)
 
 def modbusTcpConnect(teltonika):
     print("Attempting to connect to Modbus TCP server...")
+    # Keep trying until connection is successful
     while not teltonika.connect():
-        time.sleep(1)  # Wait for 2 seconds before retrying
-
-
-
-        # Gecombineerde registers printen
-        #print(combined_registers)
+        print("Modbus TCP initialisation failed")
+        time.sleep(1)
 
 
 def modbusMessage(comap, slaveID):
@@ -91,15 +96,16 @@ def modbusMessage(comap, slaveID):
         }
         print(message)
     except Exception as e:
-        print(f"Error: {e}")    
+        # Reraise to let the loop handle reconnection.
+        print(f"Error in modbusMessage for slave {slaveID}: {e}")
+        raise
 
 def teltonikaMessage():
     try:
         response = teltonika.read_holding_registers(143, count=4)  # Read 4 registers
-        if hasattr(response, 'registers'):
-            latlon = response.registers  # Extract the register values
-        else:
-            raise ValueError("No registers in response") # Raise an error if there are no registers
+        if not hasattr(response, 'registers'):
+            raise ValueError("No registers in response")
+        latlon = response.registers
         teltonika.close()
         # Combine the registers into a single 32-bit float value (big-endian) and unpack it to a float value (latitude)
         combined = (latlon[0] << 16) | latlon[1]
@@ -116,36 +122,47 @@ def teltonikaMessage():
         }
         print(message)
         teltonika.close()
-
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error in teltonikaMessage: {e}")
+        raise  # Let the loop catch and reconnect if necessary
 
 BROKER = credentials["broker"] 
 PORT = credentials["port"]
 USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
 topicData = "ET/genlogger/data"
-msgCount = 0
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
-#client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
-client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
+client.on_disconnect = on_disconnect  # Attach the on_disconnect callback
+client.connect(BROKER, PORT, keepalive=10)
 client.loop_start()
 
 def modbus_loop():
+    # Establish initial connections
     modbusConnect(comapA)
     modbusConnect(comapB)
     while True:
-        modbusMessage(comapA, 3)
-        modbusMessage(comapB, 4)
+        try:
+            modbusMessage(comapA, comapAslave)
+        except Exception:
+            # Reconnect on error
+            modbusConnect(comapA)
+        try:
+            modbusMessage(comapB, comapBslave)
+        except Exception:
+            modbusConnect(comapB)
         time.sleep(1)
 
 def teltonika_loop():
     modbusTcpConnect(teltonika)
     while True:
-        teltonikaMessage()
+        try:
+            teltonikaMessage()
+        except Exception:
+            # If reading fails, try reconnecting
+            modbusTcpConnect(teltonika)
         time.sleep(1)
 
 if __name__ == "__main__":
