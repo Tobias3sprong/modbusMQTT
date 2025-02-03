@@ -119,6 +119,8 @@ def teltonikaMessage():
         latlon = response.registers
         # Remove or comment out teltonika.close() for persistent connections.
         teltonika.close()
+        response = teltonika.read_holding_registers(328, count=8)
+        print(response.registers)
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]
