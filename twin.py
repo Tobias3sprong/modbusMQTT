@@ -117,7 +117,7 @@ def teltonikaMessage():
             raise ValueError("No registers in response")
         latlon = response.registers
         # Remove or comment out teltonika.close() for persistent connections.
-        # teltonika.close()
+        teltonika.close()
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]
@@ -132,7 +132,6 @@ def teltonikaMessage():
             "longitude": longitude
         }
         print(message)
-        # teltonika.close()  # Remove if you want to keep the connection open.
     except Exception as e:
         print(f"Error in teltonikaMessage: {e}")
         raise
