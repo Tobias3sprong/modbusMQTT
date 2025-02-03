@@ -11,11 +11,9 @@ with open(json_file_path, "r") as f:
     credentials = json.load(f)
 
 
-def on_connect(client, userdata, flags, reason_code, properties):
-    print(f"Connected with result code {reason_code}")
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    #client.subscribe("$SYS/#")
+def on_connect(client, userdata, flags, rc):
+    if rc == 0 and client.is_connected():
+        print("Connected to MQTT broker")
 
 
 
@@ -117,7 +115,7 @@ def modbusMessageB():
 
         message = {
             "timestamp": time.time(),
-            "gensetName": decoded_string,
+            "gensetName": decoded_string, #Comap outputs some weird characters at the end of the string
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
