@@ -120,6 +120,14 @@ def teltonikaMessage():
         # Remove or comment out teltonika.close() for persistent connections.
         teltonika.close()
         response = teltonika.read_holding_registers(328, count=8)
+        if hasattr(response, 'registers'):
+            # Pack each register as a big-endian unsigned short (2 bytes)
+            byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
+            # Decode as UTF-8 and strip any null characters
+            text = byte_data.decode('utf-8').split('\x00')[0]
+            print(text)
+        else:
+            print("No registers found in response")
         print(response.registers)
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
