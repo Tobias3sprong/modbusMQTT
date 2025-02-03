@@ -25,6 +25,8 @@ def on_disconnect(client, userdata, rc):
         except Exception as e:
             print(f"Reconnect failed: {e}")
 
+routerSerial = ""    
+
 # MODBUS
 # Set up modbus RTU
 comapA = ModbusSerialClient(
@@ -99,6 +101,7 @@ def modbusMessage(comap, slaveID):
 
         message = {
             "timestamp": time.time(),
+            "routerSerial": routerSerial,
             "gensetName": decoded_string,
             "dataBlock1": block1,
             "dataBlock2": block2,
@@ -119,16 +122,16 @@ def teltonikaMessage():
         latlon = response.registers
         # Remove or comment out teltonika.close() for persistent connections.
         teltonika.close()
-        response = teltonika.read_holding_registers(39, count=16)
-        if hasattr(response, 'registers'):
-            # Pack each register as a big-endian unsigned short (2 bytes)
-            byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
-            # Decode as UTF-8 and strip any null characters
-            text = byte_data.decode('ascii').split('\a')[0]
-            print(text)
-        else:
-            print("No registers found in response")
-        print(response.registers)
+        if routerSerial == "":
+            response = teltonika.read_holding_registers(39, count=16)
+            if hasattr(response, 'registers'):
+                # Pack each register as a big-endian unsigned short (2 bytes)
+                byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
+                # Decode as UTF-8 and strip any null characters
+                routerSerial = byte_data.decode('ascii').split('\a')[0]
+                print(routerSerial)
+            else:
+                print("No registers found in response")
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]
@@ -139,6 +142,7 @@ def teltonikaMessage():
 
         message = {
             "timestamp": time.time(),
+            "routerSerial": routerSerial,
             "latitude": latitude,
             "longitude": longitude
         }
