@@ -193,7 +193,7 @@ def teltonika_loop():
             teltonikaMessage()
         except Exception:
             modbusTcpConnect(teltonika)
-        time.sleep(1)
+        time.sleep(30)
 
 if __name__ == "__main__":
     thread_modbusA = threading.Thread(target=comap_loop, args=(comapA,), daemon=True)
