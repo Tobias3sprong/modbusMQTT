@@ -119,7 +119,7 @@ def teltonikaMessage():
         latlon = response.registers
         # Remove or comment out teltonika.close() for persistent connections.
         teltonika.close()
-        response = teltonika.read_holding_registers(328, count=8)
+        response = teltonika.read_holding_registers(39, count=16)
         if hasattr(response, 'registers'):
             # Pack each register as a big-endian unsigned short (2 bytes)
             byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
