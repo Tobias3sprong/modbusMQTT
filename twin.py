@@ -110,6 +110,7 @@ def modbusMessage(comap, slaveID):
             "FW": "0.7.0",
         }
         print(message)
+        client.publish(genData, json.dumps(message))
     except Exception as e:
         print(f"Error in modbusMessage for slave {slaveID}: {e}")
         raise
@@ -149,6 +150,7 @@ def teltonikaMessage():
             "longitude": longitude
         }
         print(message)
+        client.publish(modemData, json.dumps(message))
     except Exception as e:
         print(f"Error in teltonikaMessage: {e}")
         raise
@@ -158,7 +160,8 @@ BROKER = credentials["broker"]
 PORT = credentials["port"]
 USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
-topicData = "ET/genlogger/data"
+genData = "ET/genlogger/data"
+modemData = "ET/modemlogger/data"
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
