@@ -167,7 +167,7 @@ def comap_loop(comap):
     # Establish initial connection on the bus.
     modbusConnect(comap)
     slave_id = discover_slave_id(comap, start=1, end=10)
-    if slave_id is None:
+    while slave_id is None:
         print("No slave found. Exiting.")
         return
     while True:
@@ -209,8 +209,8 @@ if __name__ == "__main__":
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
     
     thread_modbusA.start()
-    thread_modbusB.start()
-    thread_teltonika.start()
+    #thread_modbusB.start()
+    #thread_teltonika.start()
 
     while True:
         time.sleep(10)
