@@ -129,7 +129,8 @@ def teltonikaMessage():
                 # Pack each register as a big-endian unsigned short (2 bytes)
                 byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
                 # Decode as UTF-8 and strip any null characters
-                routerSerial = byte_data.decode('ascii').split('\a')[0]
+                routerSerial = byte_data.decode('ascii').split('\00')[0]
+                teltonika.close() 
                 print(routerSerial)
             else:
                 print("No registers found in response")
