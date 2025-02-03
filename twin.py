@@ -119,7 +119,7 @@ def modbusMessageB():
 
         message = {
             "timestamp": time.time(),
-            "gensetName": decoded_string.strip('\x00'),
+            "gensetName": decoded_string.split('\x00')[0],
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
