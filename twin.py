@@ -124,11 +124,7 @@ def modbusMessageB():
             "dataBlock2": block2,
             "dataBlock3": block3,
             "dataBlock4": block4,
-            #"RSSI": RSSI,
-            #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
-            #"IP": WanIP,
-            "FW": "0.7.0",
-        #    "gpsLat": gpsLat.registers[0] +
+            "FW": "0.7.0"
         }
         result = client.publish(topicData, json.dumps(message))
         status = result.rc
@@ -183,9 +179,9 @@ time.sleep(2)
 
 try:
     while True:
-        #modbusMessageA()
+        modbusMessageA()
         modbusMessageB()
-        #teltonikaMessage()
+        teltonikaMessage()
         time.sleep(1)
 except Exception as e:
     print(f"Error: {e}")
