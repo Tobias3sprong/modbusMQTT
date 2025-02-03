@@ -152,7 +152,7 @@ client.loop_start()
 
 def comap_loop(comap):
     modbusConnect(comap)
-    slave_id = discover_slave_id(comap, start=1, end=10)
+    slave_id = discover_slave_id(comap, start=1, end=6)
     if slave_id is None:
         print("No slave found. Exiting.")
         return
