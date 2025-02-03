@@ -154,7 +154,7 @@ client.loop_start()
 def comap_loop(comap):
     modbusConnect(comap)
     # discover_slave_id will loop internally until a slave is found.
-    slave_id = discover_slave_id(comap, start=1, end=6)
+    slave_id = 3 #discover_slave_id(comap, start=1, end=32)
     
     while True:
         try:
@@ -163,8 +163,8 @@ def comap_loop(comap):
             print(f"Error occurred: {e}. Reconnecting and rediscovering slave id...")
             modbusConnect(comap)
             # This call will loop internally until it finds a valid slave id.
-            slave_id = discover_slave_id(comap, start=1, end=6)
-            print(f"Rediscovered slave id: {slave_id}")
+            #slave_id = discover_slave_id(comap, start=1, end=32)
+            #print(f"Rediscovered slave id: {slave_id}")
         time.sleep(1)
 
 def teltonika_loop():
