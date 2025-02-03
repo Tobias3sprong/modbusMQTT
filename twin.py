@@ -63,21 +63,21 @@ def modbusTcpConnect(teltonika):
         #print(combined_registers)
 
 
-def modbusMessageA():
+def modbusMessage(comap, slaveID):
     try:
         # Read the genset name
-        response1 = comapA.read_holding_registers(3000, count=8, slave=comapAslave) #Genset Name
+        response1 = comap.read_holding_registers(3000, count=8, slave=slaveID) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
         decoded_string = byte_data.decode('utf-8').split("\x00")[0]
 
         # Read the data blocks
-        response2 = comapA.read_holding_registers(12, count=6, slave=comapAslave) #First block
+        response2 = comap.read_holding_registers(12, count=6, slave=slaveID) #First block
         block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
-        response3 = comapA.read_holding_registers(103, count=21, slave=comapAslave)  #Second block
+        response3 = comap.read_holding_registers(103, count=21, slave=slaveID)  #Second block
         block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
-        response4 = comapA.read_holding_registers(162, count=6, slave=comapAslave)  #Second block
+        response4 = comap.read_holding_registers(162, count=6, slave=slaveID)  #Second block
         block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
-        response5 = comapA.read_holding_registers(248, count=108, slave=comapAslave)  #Second block
+        response5 = comap.read_holding_registers(248, count=108, slave=slaveID)  #Second block
         block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
 
         message = {
@@ -92,40 +92,6 @@ def modbusMessageA():
         print(message)
     except Exception as e:
         print(f"Error: {e}")    
-
-def modbusMessageB():
-    try:
-        # Read the genset name
-        response1 = comapB.read_holding_registers(3000, count=8, slave=comapBslave) #Genset Name
-        byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        decoded_string = byte_data.decode('utf-8').split('\x00')[0] #Comap outputs some weird characters at the end of the string
-
-        # Read the data blocks
-        response2 = comapB.read_holding_registers(12, count=6, slave=comapBslave) #First block
-        block1 = ''.join('{:04x}'.format(b) for b in response2.registers)
-        response3 = comapB.read_holding_registers(103, count=21, slave=comapBslave)  #Second block
-        block2 = ''.join('{:04x}'.format(b) for b in response3.registers)
-        response4 = comapB.read_holding_registers(162, count=6, slave=comapBslave)  #Second block
-        block3 = ''.join('{:04x}'.format(b) for b in response4.registers)
-        response5 = comapB.read_holding_registers(248, count=108, slave=comapBslave)  #Second block
-        block4 = ''.join('{:04x}'.format(b) for b in response5.registers)
-
-        message = {
-            "timestamp": time.time(),
-            "gensetName": decoded_string, #Comap outputs some weird characters at the end of the string
-            "dataBlock1": block1,
-            "dataBlock2": block2,
-            "dataBlock3": block3,
-            "dataBlock4": block4,
-            "FW": "0.7.0"
-        }
-        result = client.publish(topicData, json.dumps(message))
-        status = result.rc
-        if status != 0:
-            print(f'Failed to send log message to topic {topicData}')
-        print(message)
-    except Exception as e:
-            print(f"Error: {e}")    
 
 def teltonikaMessage():
     try:
@@ -179,8 +145,8 @@ def modbus_loop():
     modbusConnect(comapA)
     modbusConnect(comapB)
     while True:
-        modbusMessageA()
-        modbusMessageB()  
+        modbusMessage(comapA, 3)
+        modbusMessage(comapB, 4)
         time.sleep(1)
 
 def teltonika_loop():
