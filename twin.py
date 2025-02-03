@@ -150,7 +150,12 @@ def teltonikaMessage():
         combined = (latlon[2] << 16) | latlon[3]
         bytes_data = combined.to_bytes(4, byteorder='big')
         longitude = unpack('>f', bytes_data)[0]  # '>' = big-endian float
-        print(f"Latitude: {latitude}" + f"Longitude: {longitude}")
+        message = {
+            "timestamp": time.time(),
+            "latitude": latitude,
+            "longitude": longitude
+        }
+        print(message)
         teltonika.close()
 
     except Exception as e:
