@@ -161,9 +161,10 @@ def teltonika_loop():
         time.sleep(1)
 
 if __name__ == "__main__":
-    thread_modbusA = threading.Thread(target=comap_loop(comapA, 3), daemon=True)
-    thread_modbusB = threading.Thread(target=comap_loop(comapB, 4), daemon=True)
+    thread_modbusA = threading.Thread(target=comap_loop, args=(comapA, 3), daemon=True)
+    thread_modbusB = threading.Thread(target=comap_loop, args=(comapB, 4), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
+    
     thread_modbusA.start()
     thread_modbusB.start()
     thread_teltonika.start()
