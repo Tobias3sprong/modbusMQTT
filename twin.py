@@ -47,6 +47,7 @@ teltonika = ModbusTcpClient(
 )
 
 def modbusConnect(comap):
+    print(f"Attempting to connect to {comap}")
     while comap.connect() == False:
         print("Modbus initialisation failed")
         time.sleep(2)
