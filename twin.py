@@ -185,7 +185,7 @@ def comap_loop(comap):
     if slave_id is None:
         print("No slave found. Exiting.")
         return
-    while True:
+    while slave_id is not None:
         try:
             modbusMessage(comap, slave_id)
         except Exception as e:
