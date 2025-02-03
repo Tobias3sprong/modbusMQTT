@@ -1,6 +1,7 @@
 import json
 import time
 import struct
+import threading
 from struct import unpack
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
@@ -178,11 +179,20 @@ time.sleep(2)
 client.loop_start()
 time.sleep(2)
 
-try:
+def modbus_loop():
+    modbusConnect(comapA)
+    modbusConnect(comapB)
+    time.sleep(1)
+
+def teltonika_loop():
+    modbusTcpConnect(teltonika)
+    time.sleep(1)
+
+if __name__ == "__main__":
+    thread_modbus = threading.Thread(target=modbus_loop, daemon=True)
+    thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
+    thread_modbus.start()
+    thread_teltonika.start()
+
     while True:
-        modbusMessageA()
-        modbusMessageB()
-        teltonikaMessage()
-        time.sleep(1)
-except Exception as e:
-    print(f"Error: {e}")
+        time.sleep(10)
