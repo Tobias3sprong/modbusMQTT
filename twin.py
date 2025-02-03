@@ -178,11 +178,16 @@ time.sleep(2)
 def modbus_loop():
     modbusConnect(comapA)
     modbusConnect(comapB)
-    time.sleep(1)
+    while True:
+        modbusMessageA()
+        modbusMessageB()  
+        time.sleep(1)
 
 def teltonika_loop():
     modbusTcpConnect(teltonika)
-    time.sleep(1)
+    while True:
+        teltonikaMessage()
+        time.sleep(1)
 
 if __name__ == "__main__":
     thread_modbus = threading.Thread(target=modbus_loop, daemon=True)
