@@ -65,17 +65,7 @@ def modbusTcpConnect(teltonika):
         time.sleep(1)
 
 def discover_slave_id(modbus_client, start=1, end=247):
-    """
-    Attempts to discover the slave id by trying a read on each candidate slave.
-    
-    Parameters:
-      modbus_client - an instance of ModbusSerialClient that is already connected.
-      start - the first slave id to try (default 1).
-      end   - the last slave id to try (default 247).
-      
-    Returns:
-      The slave id if found, or None otherwise.
-    """
+
     for slave in range(start, end + 1):
         print(f"Testing slave id: {slave} ...")
         try:
@@ -170,7 +160,7 @@ def comap_loop(comap):
     if slave_id is None:
         print("No slave found. Exiting.")
         return
-    while slave_id is not None:
+    while True:
         try:
             modbusMessage(comap, slave_id)
         except Exception as e:
