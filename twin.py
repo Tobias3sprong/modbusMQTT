@@ -119,7 +119,7 @@ def modbusMessageB():
 
         message = {
             "timestamp": time.time(),
-            "gensetName": decoded_string.split('\x00')[0],
+            "gensetName": decoded_string.split('\x00')[0], #Comap outputs some weird characters at the end of the string
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
