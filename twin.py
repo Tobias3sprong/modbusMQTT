@@ -115,6 +115,7 @@ def modbusMessage(comap, slaveID):
         raise
 
 def teltonikaMessage():
+    global routerSerial
     try:
         response = teltonika.read_holding_registers(143, count=4)
         if not hasattr(response, 'registers'):
