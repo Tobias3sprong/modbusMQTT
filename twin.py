@@ -127,19 +127,12 @@ PASSWORD = credentials["password"]
 topicData = "ET/genlogger/data"
 msgCount = 0
 
-
-
-flag_connected = True
-lastLogMessage = ""
-
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
 #client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
 client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
-time.sleep(2)
 client.loop_start()
-time.sleep(2)
 
 def modbus_loop():
     modbusConnect(comapA)
