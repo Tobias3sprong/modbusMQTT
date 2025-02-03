@@ -63,20 +63,21 @@ def modbusTcpConnect(teltonika):
         time.sleep(1)
 
 def discover_slave_id(modbus_client, start=1, end=247):
-    for slave in range(start, end + 1):
-        print(f"Testing slave id: {slave} ...")
-        try:
-            response = modbus_client.read_holding_registers(3000, count=8, slave=slave)
-            if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
-                print(f"Device found on slave id {slave}")
-                return slave
-            else:
-                print(f"No valid response from slave id {slave}")
-        except Exception as e:
-            print(f"Error testing slave id {slave}: {e}")
-        time.sleep(0.2)
-    print("Device not found in the specified slave id range.")
-    return None
+    while True:
+        for slave in range(start, end + 1):
+            print(f"Testing slave id: {slave} ...")
+            try:
+                response = modbus_client.read_holding_registers(3000, count=8, slave=slave)
+                if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
+                    print(f"Device found on slave id {slave}")
+                    return slave
+                else:
+                    print(f"No valid response from slave id {slave}")
+            except Exception as e:
+                print(f"Error testing slave id {slave}: {e}")
+            time.sleep(0.2)
+        print("Device not found in the specified slave id range. Restarting discovery...")
+        time.sleep(5)
 
 def modbusMessage(comap, slaveID):
     try:
@@ -152,26 +153,18 @@ client.loop_start()
 
 def comap_loop(comap):
     modbusConnect(comap)
-    slave_id = discover_slave_id(comap, start=1, end=6)
-    if slave_id is None:
-        print("No slave found. Exiting.")
-        return
+    # discover_slave_id will loop internally until a slave is found.
+    slave_id = discover_slave_id(comap, start=1, end=10)
+    
     while True:
         try:
             modbusMessage(comap, slave_id)
         except Exception as e:
             print(f"Error occurred: {e}. Reconnecting and rediscovering slave id...")
             modbusConnect(comap)
-            # Keep trying until a valid slave ID is found
-            while True:
-                new_slave_id = discover_slave_id(comap, start=1, end=10)
-                if new_slave_id is not None:
-                    slave_id = new_slave_id
-                    print(f"Rediscovered slave id: {slave_id}")
-                    break
-                else:
-                    print("No slave found, retrying in 5 seconds...")
-                    time.sleep(5)
+            # This call will loop internally until it finds a valid slave id.
+            slave_id = discover_slave_id(comap, start=1, end=10)
+            print(f"Rediscovered slave id: {slave_id}")
         time.sleep(1)
 
 def teltonika_loop():
