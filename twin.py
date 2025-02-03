@@ -139,20 +139,15 @@ client.on_disconnect = on_disconnect  # Attach the on_disconnect callback
 client.connect(BROKER, PORT, keepalive=10)
 client.loop_start()
 
-def modbus_loop():
+def comap_loop(comap, slaveID):
     # Establish initial connections
-    modbusConnect(comapA)
-    modbusConnect(comapB)
+    modbusConnect(comap)
     while True:
         try:
-            modbusMessage(comapA, comapAslave)
+            modbusMessage(comap, slaveID)
         except Exception:
             # Reconnect on error
-            modbusConnect(comapA)
-        try:
-            modbusMessage(comapB, comapBslave)
-        except Exception:
-            modbusConnect(comapB)
+            modbusConnect(comap)
         time.sleep(1)
 
 def teltonika_loop():
@@ -166,9 +161,11 @@ def teltonika_loop():
         time.sleep(1)
 
 if __name__ == "__main__":
-    thread_modbus = threading.Thread(target=modbus_loop, daemon=True)
+    thread_modbusA = threading.Thread(target=comap_loop(comapA, 3), daemon=True)
+    thread_modbusB = threading.Thread(target=comap_loop(comapB, 4), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
-    thread_modbus.start()
+    thread_modbusA.start()
+    thread_modbusB.start()
     thread_teltonika.start()
 
     while True:
