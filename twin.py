@@ -11,9 +11,11 @@ with open(json_file_path, "r") as f:
     credentials = json.load(f)
 
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0 and client.is_connected():
-        print("Connected to MQTT broker")
+def on_connect(client, userdata, flags, reason_code, properties):
+    print(f"Connected with result code {reason_code}")
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    #client.subscribe("$SYS/#")
 
 
 
@@ -71,7 +73,7 @@ def modbusMessageA():
         # Read the genset name
         response1 = comapA.read_holding_registers(3000, count=8, slave=comapAslave) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        decoded_string = byte_data.decode('utf-8').strip('\x00').split("\x00")[0]
+        decoded_string = byte_data.decode('utf-8').split("\x00")[0]
 
         # Read the data blocks
         response2 = comapA.read_holding_registers(12, count=6, slave=comapAslave) #First block
@@ -90,11 +92,7 @@ def modbusMessageA():
             "dataBlock2": block2,
             "dataBlock3": block3,
             "dataBlock4": block4,
-            #"RSSI": RSSI,
-            #"IMSI": int(IMSI),  # Add the full IMSI as a readable string
-            #"IP": WanIP,
             "FW": "0.7.0",
-        #    "gpsLat": gpsLat.registers[0] +
         }
         print(message)
     except Exception as e:
@@ -105,7 +103,7 @@ def modbusMessageB():
         # Read the genset name
         response1 = comapB.read_holding_registers(3000, count=8, slave=comapBslave) #Genset Name
         byte_data = b''.join(struct.pack('>H', reg) for reg in response1.registers)
-        decoded_string = byte_data.decode('utf-8')
+        decoded_string = byte_data.decode('utf-8').split('\x00')[0] #Comap outputs some weird characters at the end of the string
 
         # Read the data blocks
         response2 = comapB.read_holding_registers(12, count=6, slave=comapBslave) #First block
@@ -119,7 +117,7 @@ def modbusMessageB():
 
         message = {
             "timestamp": time.time(),
-            "gensetName": decoded_string.split('\x00')[0], #Comap outputs some weird characters at the end of the string
+            "gensetName": decoded_string,
             "dataBlock1": block1,
             "dataBlock2": block2,
             "dataBlock3": block3,
