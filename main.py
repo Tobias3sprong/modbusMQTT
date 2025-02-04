@@ -36,10 +36,16 @@ def modbusConnect(modbusclient):
 
 
 def modbusTcpConnect(tcpClient):
+    global routerSerial
     print("Attempting to connect to Modbus TCP server...")
     while not tcpClient.connect():
         logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
         time.sleep(1)  # Wait for 2 seconds before retrying
+    serialData = tcpClient.read_holding_registers(39, count=16)
+    serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
+    routerSerial = serialByteData.decode('ascii').split('\00')[0]
+    client.subscribe(topicReset)
+    client.subscribe(topicConfig)
     logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
 
 
@@ -60,7 +66,6 @@ def logMQTT(client, topicLog, logMessage):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        logMQTT(client,topicLog, "Connected to broker!")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -156,14 +161,6 @@ def publishModemlog(client):
         wanipint = (wanipData.registers[0] << 16) | wanipData.registers[1] 
         wanip = '.'.join(str((wanipint >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
         tcpClient.close()
-        serialData = tcpClient.read_holding_registers(39, count=16)
-        serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
-        newRouterSerial = serialByteData.decode('ascii').split('\00')[0]
-        if not newRouterSerial == routerSerial:
-            routerSerial = newRouterSerial
-            client.subscribe(topicReset)
-            client.subscribe(topicConfig)
-        tcpClient.close()
         # Convert to a dotted quad IP string
         message = {
             "timestamp": time.time(),
@@ -224,6 +221,7 @@ client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last w
 client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
 client.loop_start()
 time.sleep(2)
+logMQTT(client,topicLog, "Node is connected to broker!")
 
 if __name__ == "__main__":
     
