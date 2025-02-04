@@ -1,7 +1,7 @@
 from pymodbus.client.tcp import ModbusTcpClient
 
 tcpClient = ModbusTcpClient(
-    host="178.230.186.88",
+    host="77.170.196.120",
     port=502
 )
 if tcpClient.connect():
