@@ -120,17 +120,16 @@ def teltonikaMessage():
         latlon = response.registers
         # Remove or comment out teltonika.close() for persistent connections.
         teltonika.close()
-        if routerSerial == "":
-            response = teltonika.read_holding_registers(39, count=16)
-            if hasattr(response, 'registers'):
-                # Pack each register as a big-endian unsigned short (2 bytes)
-                byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
-                # Decode as UTF-8 and strip any null characters
-                routerSerial = byte_data.decode('ascii').split('\00')[0]
-                teltonika.close() 
-                print(routerSerial)
-            else:
-                print("No registers found in response")
+        response = teltonika.read_holding_registers(39, count=16)
+        if hasattr(response, 'registers'):
+            # Pack each register as a big-endian unsigned short (2 bytes)
+            byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
+            # Decode as UTF-8 and strip any null characters
+            routerSerial = byte_data.decode('ascii').split('\00')[0]
+            teltonika.close() 
+            print(routerSerial)
+        else:
+            print("No registers found in response")
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]
