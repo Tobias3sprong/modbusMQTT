@@ -137,7 +137,7 @@ def publishPowerlog(client):
         hexStringCT = ''.join('{:04x}'.format(b) for b in ct.registers)
         message = {
             "timestamp": time.time(),
-            "routerSerial": routerSerial,
+            "routerSerial": int(routerSerial),
             "slaveID": 1,
             "rtuData": hexString + hexStringCT,
         }
