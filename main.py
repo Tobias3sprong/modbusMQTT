@@ -60,6 +60,7 @@ def logMQTT(client, topicLog, logMessage):
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
+        logMQTT(client,topicLog, "Connected to broker!")
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
 
@@ -67,6 +68,7 @@ def on_connect(client, userdata, flags, rc):
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
     if rc != 0:
+        print("Unexpected disconnection. Attempting to reconnect...")
         try:
             client.reconnect()
         except Exception as e:
