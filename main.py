@@ -167,11 +167,11 @@ def publishModemlog(client):
         # Convert to a dotted quad IP string
         message = {
             "timestamp": time.time(),
-            "modemSerial": routerSerial,
+            "modemSerial": int(routerSerial),
             "RSSI": rssi,
             "IMSI": int(imsi),  # Add the full IMSI as a readable string
             "IP": wanip,
-            "FW": "1.0.1"
+            "FW": "1.0.2"
         }
         result = client.publish(topicModem, json.dumps(message))
         status = result[0]
@@ -179,35 +179,6 @@ def publishModemlog(client):
             print(f'Failed to send message to topic {topicModem}')
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
-
-
-
-# MQTT
-
-BROKER = credentials["broker"] 
-PORT = credentials["port"]
-USERNAME = credentials["username"]
-PASSWORD = credentials["password"]
-topicPower = "ET/powerlogger/data"
-topicModem = "ET/modemlogger/data"
-topicReset = "ET/powerlogger/"+routerSerial+"/reset"
-topicConfig = "ET/powerlogger/"+routerSerial+"/config"
-topicLog = "ET/powerlogger/"+routerSerial+"/log"
-msgCount = 0
-
-
-
-flag_connected = True
-lastLogMessage = ""
-
-client = mqtt_client.Client()
-client.username_pw_set(USERNAME, PASSWORD)
-client.on_connect = on_connect
-client.on_message = on_message
-client.on_disconnect = on_disconnect  # Moved this line to the connect_mqtt function
-client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
-client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
-client.loop_start()
 
 
 def powerLoop():
@@ -227,14 +198,42 @@ def modemLoop():
         except Exception:
             modbusTcpConnect(tcpClient)
         time.sleep(60)
+# MQTT
+
+BROKER = credentials["broker"] 
+PORT = credentials["port"]
+USERNAME = credentials["username"]
+PASSWORD = credentials["password"]
+topicPower = "ET/powerlogger/data"
+topicModem = "ET/modemlogger/data"
+topicReset = "ET/powerlogger/"+routerSerial+"/reset"
+topicConfig = "ET/powerlogger/"+routerSerial+"/config"
+topicLog = "ET/powerlogger/"+routerSerial+"/log"
+msgCount = 0
+
+
+
+flag_connected = True
+lastLogMessage = ""
+client = mqtt_client.Client()
+client.username_pw_set(USERNAME, PASSWORD)
+client.on_connect = on_connect
+client.on_message = on_message
+client.on_disconnect = on_disconnect  # Moved this line to the connect_mqtt function
+client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
+client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
+client.loop_start()
+time.sleep(2)
 
 if __name__ == "__main__":
     
     thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
     thread_powerLoop = threading.Thread(target=powerLoop, daemon=True)
     
-    thread_powerLoop.start()
     thread_modemLoop.start()
+    time.sleep(5)
+    thread_powerLoop.start()
+    
 
     while True:
         time.sleep(10)
