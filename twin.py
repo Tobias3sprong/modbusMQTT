@@ -28,7 +28,7 @@ def on_disconnect(client, userdata, rc):
 # MODBUS
 # Set up modbus RTU
 comapA = ModbusSerialClient(
-    port='/dev/ttyUSB0',
+    port='/dev/ttyUSB6',
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -37,7 +37,7 @@ comapA = ModbusSerialClient(
 )
 
 comapB = ModbusSerialClient(
-    port='/dev/ttyUSB1',
+    port='/dev/ttyUSB7',
     stopbits=1,
     bytesize=8,
     parity='N',

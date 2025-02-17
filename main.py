@@ -63,7 +63,6 @@ def logMQTT(client, topicLog, logMessage):
         if status != 0:
             print(f'Failed to send log message to topic {topicLog}')
 
-
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         client.subscribe(topicReset)
@@ -126,7 +125,6 @@ def on_message(client, userdata, msg):
         except Exception as error:
             print("An error occurred:", error)  # An error occurred: name 'x' is not defined
             logMQTT(client, topicLog, "Received invalid config message")
-
 
 def publishPowerlog(client):
     global routerSerial
