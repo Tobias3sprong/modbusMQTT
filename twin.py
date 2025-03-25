@@ -33,7 +33,8 @@ comapA = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3
+    timeout=0.3,
+    retries=1
 )
 
 comapB = ModbusSerialClient(
@@ -42,7 +43,8 @@ comapB = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3
+    timeout=0.3,
+    retries=1
 )
 # Set up modbus TCP
 teltonika = ModbusTcpClient(
