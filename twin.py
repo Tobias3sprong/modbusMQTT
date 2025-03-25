@@ -79,7 +79,7 @@ def discover_slave_id(modbus_client, start=1, end=247):
                     print(f"No valid response from slave id {slave}")
             except Exception as e:
                 print(f"Error testing slave id {slave}: {e}")
-            time.sleep(0.2)
+            #time.sleep(0.2)
         print("Device not found in the specified slave id range. Restarting discovery...")
         time.sleep(5)
 
