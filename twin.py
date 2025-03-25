@@ -33,7 +33,7 @@ comapA = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3,
+    timeout=0.1,
     retries=1
 )
 comapA.transaction_retries = 1  # Set the number of retries for Modbus operations
@@ -44,7 +44,7 @@ comapB = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3,
+    timeout=0.1,
     retries=1
 )
 comapB.transaction_retries = 1  # Set the number of retries for Modbus operations
