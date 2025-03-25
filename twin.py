@@ -36,6 +36,7 @@ comapA = ModbusSerialClient(
     timeout=0.3,
     retries=1
 )
+comapA.transaction_retries = 1  # Set the number of retries for Modbus operations
 
 comapB = ModbusSerialClient(
     port='/dev/rs232_usb_708d229b',
@@ -46,6 +47,7 @@ comapB = ModbusSerialClient(
     timeout=0.3,
     retries=1
 )
+comapB.transaction_retries = 1  # Set the number of retries for Modbus operations
 # Set up modbus TCP
 teltonika = ModbusTcpClient(
     host="localhost",
