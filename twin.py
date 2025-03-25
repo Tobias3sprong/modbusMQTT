@@ -38,7 +38,7 @@ comapA = ModbusSerialClient(
 )
 
 comapB = ModbusSerialClient(
-    port='/dev/ttyUSB4',
+    port='/dev/ttyUSB2',
     stopbits=1,
     bytesize=8,
     parity='N',
