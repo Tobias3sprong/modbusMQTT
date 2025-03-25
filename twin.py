@@ -183,7 +183,7 @@ def comap_loop(comap):
             # This call will loop internally until it finds a valid slave id.
             slave_id = discover_slave_id(comap, start=1, end=32)
             print(f"Rediscovered slave id: {slave_id}")
-        #time.sleep(1)
+        time.sleep(10)
 
 def teltonika_loop():
     modbusTcpConnect(teltonika)
