@@ -137,7 +137,7 @@ def publishPowerlog(client):
             "timestamp": time.time(),
             "routerSerial": int(routerSerial),
             "slaveID": 1,
-            "rtuData": hexString + hexStringCT,
+            "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
         }
         result = client.publish(topicPower, json.dumps(message))
         status = result[0]
@@ -233,3 +233,5 @@ if __name__ == "__main__":
 
     while True:
         time.sleep(10)
+
+        
