@@ -15,6 +15,14 @@ with open(json_file_path, "r") as f:
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         print("Connected to MQTT broker")
+        import requests
+
+        def get_wan_ip():
+            response = requests.get('https://api.ipify.org?format=json')
+            return response.json()['ip']
+
+        wanIP = get_wan_ip()
+        client.publish("TwinsetIP", wanIP)
 
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
