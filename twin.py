@@ -6,7 +6,7 @@ from struct import unpack
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
-
+import requests
 # Load credentials
 json_file_path = r".secrets/credentials.json"
 with open(json_file_path, "r") as f:
