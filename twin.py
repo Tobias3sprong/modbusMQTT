@@ -66,6 +66,17 @@ teltonika = ModbusTcpClient(
     port=502
 )
 
+# Set up modbus RTU for powerlogger
+powerlogger = ModbusSerialClient(
+    port='usb_serial_dbe17d6e',
+    stopbits=1,
+    bytesize=8,
+    parity='N',
+    baudrate=19200,
+    timeout=0.3
+)
+powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
+
 def modbusConnect(comap):
     print(f"Attempting to connect to {comap}")
     while not comap.connect():
@@ -166,6 +177,68 @@ def teltonikaMessage():
         print(f"Error in teltonikaMessage: {e}")
         raise
 
+def check_powerlogger_slave(client, slave_id):
+    """Check if a powerlogger slave is active at the given address"""
+    try:
+        # Try to read registers that should be present on a powerlogger
+        response = client.read_holding_registers(int(0x1000), count=1, slave=slave_id)
+        return response is not None and not hasattr(response, 'isError')
+    except Exception:
+        return False
+
+def publish_powerlog(client, slave_id):
+    """Publish powerlogger data for a specific slave ID"""
+    try:
+        block1 = powerlogger.read_holding_registers(int(0x1000), count=122, slave=slave_id)
+        ct = powerlogger.read_holding_registers(int(0x1200), count=1, slave=slave_id)
+        hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
+        hexStringCT = ''.join('{:04x}'.format(b) for b in ct.registers)
+        message = {
+            "timestamp": time.time(),
+            "slaveID": slave_id,
+            "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
+        }
+        result = client.publish(powerData, json.dumps(message))
+        status = result[0]
+        if not status == 0:
+            print(f'Failed to send message to topic {powerData} for slave {slave_id}')
+    except Exception as e:
+        print(f"Error in publish_powerlog for slave {slave_id}: {e}")
+        raise
+
+def powerlogger_loop():
+    """Main loop for powerlogger - handles multiple slave IDs"""
+    active_slaves = set()
+    while True:
+        try:
+            # Check for new devices on addresses 1-5
+            for slave_id in range(1, 6):
+                if slave_id not in active_slaves and check_powerlogger_slave(powerlogger, slave_id):
+                    print(f"Found new powerlogger device at slave ID {slave_id}")
+                    active_slaves.add(slave_id)
+                elif slave_id in active_slaves and not check_powerlogger_slave(powerlogger, slave_id):
+                    print(f"Lost connection to powerlogger at slave ID {slave_id}")
+                    active_slaves.remove(slave_id)
+            
+            # Poll active slaves
+            for slave_id in active_slaves:
+                try:
+                    publish_powerlog(client, slave_id)
+                except Exception as e:
+                    print(f"Error polling slave {slave_id}: {e}")
+                    # Don't remove immediately, let the next check_powerlogger_slave decide
+                time.sleep(1)  # Small delay between polling each device
+            
+            # If no active slaves, wait a bit longer before checking again
+            if not active_slaves:
+                time.sleep(5)
+            else:
+                time.sleep(1)
+                
+        except Exception as e:
+            print(f"Error in powerlogger_loop: {e}")
+            time.sleep(5)  # Wait before retrying
+
 # MQTT Setup
 BROKER = credentials["broker"]
 PORT = credentials["port"]
@@ -173,6 +246,7 @@ USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
 genData = "ET/genlogger/data"
 modemData = "ET/modemlogger/data"
+powerData = "ET/powerlogger/data"
 
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
@@ -211,10 +285,13 @@ if __name__ == "__main__":
     thread_modbusB = threading.Thread(target=comap_loop, args=(comapB,), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
     thread_wan_ip = threading.Thread(target=send_wan_ip, daemon=True)
+    thread_powerlogger = threading.Thread(target=powerlogger_loop, daemon=True)
+    
     thread_modbusA.start()
     thread_modbusB.start()
     thread_teltonika.start()
     thread_wan_ip.start()
+    thread_powerlogger.start()
 
     while True:
         time.sleep(10)
