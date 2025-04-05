@@ -17,12 +17,12 @@ def on_connect(client, userdata, flags, rc):
         print("Connected to MQTT broker")
         import requests
 
-        def get_wan_ip():
-            response = requests.get('https://api.ipify.org?format=json')
-            return response.json()['ip']
-
-        wanIP = get_wan_ip()
-        client.publish("TwinsetIP", wanIP)
+def send_wan_ip():
+    response = requests.get('https://api.ipify.org?format=json')
+    return response.json()['ip']
+    wanIP = send_wan_ip()
+    client.publish("TwinsetIP", wanIP)
+    time.sleep(60*15) # 15 minutes
 
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
@@ -206,10 +206,11 @@ if __name__ == "__main__":
     thread_modbusA = threading.Thread(target=comap_loop, args=(comapA,), daemon=True)
     thread_modbusB = threading.Thread(target=comap_loop, args=(comapB,), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
-    
+    thread_wan_ip = threading.Thread(target=send_wan_ip, daemon=True)
     thread_modbusA.start()
     thread_modbusB.start()
     thread_teltonika.start()
+    thread_wan_ip.start()
 
     while True:
         time.sleep(10)

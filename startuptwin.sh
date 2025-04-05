@@ -26,8 +26,8 @@ requests==2.32.3 \
 "
 
 for pkg in $PIP_PACKAGES; do
-   pkg will look like "paho-mqtt==2.1.0"
-   We split on "==". One approach is to replace "==" with a space, then split that.
+   # pkg will look like "paho-mqtt==2.1.0"
+   # We split on "==". One approach is to replace "==" with a space, then split that.
    namever="$(echo "$pkg" | sed 's/==/ /')"
    pkg_name="$(echo "$namever" | awk '{print $1}')"
    pkg_version="$(echo "$namever" | awk '{print $2}')"
