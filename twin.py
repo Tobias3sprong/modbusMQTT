@@ -68,7 +68,7 @@ teltonika = ModbusTcpClient(
 
 # Set up modbus RTU for powerlogger
 powerlogger = ModbusSerialClient(
-    port='/dev/usb_serial_ca4780cf',
+    port='/dev/usb_serial_dbe17d6e',
     stopbits=1,
     bytesize=8,
     parity='N',
