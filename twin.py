@@ -62,7 +62,7 @@ comapB = ModbusSerialClient(
 comapB.transaction_retries = 1  # Set the number of retries for Modbus operations
 # Set up modbus TCP
 teltonika = ModbusTcpClient(
-    host="localhost",
+    host="127.0.0.1",
     port=502
 )
 
