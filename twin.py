@@ -18,11 +18,15 @@ def on_connect(client, userdata, flags, rc):
         import requests
 
 def send_wan_ip():
-    response = requests.get('https://api.ipify.org?format=json')
-    return response.json()['ip']
-    wanIP = send_wan_ip()
-    client.publish("TwinsetIP", wanIP)
-    time.sleep(60*15) # 15 minutes
+    while True:
+        try:
+            response = requests.get('https://api.ipify.org?format=json')
+            wanIP = response.json()['ip']
+            print(f"Current WAN IP: {wanIP}")
+            client.publish("TwinsetIP", wanIP)
+        except Exception as e:
+            print(f"Error getting/sending WAN IP: {e}")
+        time.sleep(60*15)  # 15 minutes
 
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
