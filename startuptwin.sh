@@ -41,7 +41,7 @@ for pkg in $PIP_PACKAGES; do
   else
     echo "$pkg_name $pkg_version is already installed. Skipping..."
   fi
-#done
+done
 
 echo "All done."
 
