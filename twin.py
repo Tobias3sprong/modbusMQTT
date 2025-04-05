@@ -73,7 +73,7 @@ powerlogger = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3
+    timeout=0.3 
 )
 powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
 
@@ -288,7 +288,7 @@ if __name__ == "__main__":
     thread_powerlogger = threading.Thread(target=powerlogger_loop, daemon=True)
     
     thread_modbusA.start()
-    thread_modbusB.start()
+#    thread_modbusB.start()
     thread_teltonika.start()
     thread_wan_ip.start()
     thread_powerlogger.start()
