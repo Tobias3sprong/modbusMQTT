@@ -40,7 +40,7 @@ def on_disconnect(client, userdata, rc):
 # MODBUS
 # Set up modbus RTU
 comapA = ModbusSerialClient(
-    port='/dev/rs232_usb_4a1e13f0',
+    port='/dev/usb_serial_4a1e13f0',
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -51,7 +51,7 @@ comapA = ModbusSerialClient(
 comapA.transaction_retries = 1  # Set the number of retries for Modbus operations
 
 comapB = ModbusSerialClient(
-    port='/dev/rs232_usb_708d229b',
+    port='/dev/usb_serial_708d229b',
     stopbits=1,
     bytesize=8,
     parity='N',
