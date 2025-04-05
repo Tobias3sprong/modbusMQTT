@@ -73,7 +73,8 @@ powerlogger = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3 
+    timeout=0.3,
+    retries=1
 )
 powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
 
