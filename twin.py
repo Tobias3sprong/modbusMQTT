@@ -97,7 +97,7 @@ def modbusTcpConnect(teltonika):
 def modbusTcpConnect(intelimains):
     print("Attempting to connect to IM Modbus TCP server...")
     while not intelimains.connect():
-        print("Modbus TCP initialisation failed")
+        print("Modbus TCP IM initialisation failed")
         time.sleep(1)
 
 def discover_slave_id(modbus_client, start=1, end=247):
