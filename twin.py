@@ -195,7 +195,7 @@ def intelimainsMessage():
         byte_data = b''.join(struct.pack('>H', reg) for reg in controllerNameResponse.registers)
         controllerName = byte_data.decode('utf-8').split("\x00")[0]
 
-        response = intelimains.read_holding_registers(1000, count=42)
+        response = intelimains.read_holding_registers(1000, count=2)
         block1 = ''.join('{:04x}'.format(b) for b in response.registers)
 
         response = intelimains.read_holding_registers(1316, count=4)
