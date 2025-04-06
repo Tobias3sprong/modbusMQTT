@@ -191,7 +191,7 @@ def teltonikaMessage():
 
 def intelimainsMessage():
     try:
-        response = intelimains.read_holding_registers(1324, count=8)
+        response = intelimains.read_holding_registers(1324, count=16)
         if not hasattr(response, 'registers'):
             raise ValueError("No registers in response")
         print(response.registers)
