@@ -198,7 +198,7 @@ def intelimainsMessage():
         response1 = intelimains.read_holding_registers(1001, count=43)
         block1 = ''.join('{:04x}'.format(b) for b in response1.registers)
 
-        response2 = intelimains.read_holding_registers(1316, count=4)
+        response2 = intelimains.read_holding_registers(1319, count=1)
         block2 = ''.join('{:04x}'.format(b) for b in response2.registers)
 
         message = {
