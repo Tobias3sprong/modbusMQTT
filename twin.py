@@ -191,10 +191,10 @@ def teltonikaMessage():
 
 def intelimainsMessage():
     try:
-        response = intelimains.read_holding_registers(1324, count=16)
-        if not hasattr(response, 'registers'):
-            raise ValueError("No registers in response")
-        print(response.registers)
+        genSetNameResponse = intelimains.read_holding_registers(1324, count=16)
+        byte_data = b''.join(struct.pack('>H', reg) for reg in genSetNameResponse.registers)
+        genSetName = byte_data.decode('utf-8').split("\x00")[0]
+        print(genSetName)
     except Exception as e:
         print(f"Error in intelimainsMessage: {e}")
         raise
