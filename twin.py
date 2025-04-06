@@ -195,11 +195,11 @@ def intelimainsMessage():
         byte_data = b''.join(struct.pack('>H', reg) for reg in controllerNameResponse.registers)
         controllerName = byte_data.decode('utf-8').split("\x00")[0]
 
-        response = intelimains.read_holding_registers(1001, count=43)
-        block1 = ''.join('{:04x}'.format(b) for b in response.registers)
+        response1 = intelimains.read_holding_registers(1001, count=43)
+        block1 = ''.join('{:04x}'.format(b) for b in response1.registers)
 
-        response = intelimains.read_holding_registers(1316, count=4)
-        block2 = ''.join('{:04x}'.format(b) for b in response.registers)
+        response2 = intelimains.read_holding_registers(1316, count=4)
+        block2 = ''.join('{:04x}'.format(b) for b in response2.registers)
 
         message = {
             "timestamp": time.time(),
