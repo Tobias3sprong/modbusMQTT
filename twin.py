@@ -191,10 +191,24 @@ def teltonikaMessage():
 
 def intelimainsMessage():
     try:
-        genSetNameResponse = intelimains.read_holding_registers(1324, count=16)
-        byte_data = b''.join(struct.pack('>H', reg) for reg in genSetNameResponse.registers)
-        genSetName = byte_data.decode('utf-8').split("\x00")[0]
-        print(genSetName)
+        controllerNameResponse = intelimains.read_holding_registers(1324, count=16)
+        byte_data = b''.join(struct.pack('>H', reg) for reg in controllerNameResponse.registers)
+        controllerName = byte_data.decode('utf-8').split("\x00")[0]
+
+        response = intelimains.read_holding_registers(1000, count=44)
+        block1 = ''.join('{:04x}'.format(b) for b in response.registers)
+
+        response = intelimains.read_holding_registers(1316, count=4)
+        block2 = ''.join('{:04x}'.format(b) for b in response.registers)
+
+        message = {
+            "timestamp": time.time(),
+            "controllerName": controllerName,
+            "dataBlock1": block1,
+            "dataBlock2": block2,
+        }
+        print(message)
+        client.publish(intelimainsData, json.dumps(message))
     except Exception as e:
         print(f"Error in intelimainsMessage: {e}")
         raise
@@ -269,7 +283,7 @@ PASSWORD = credentials["password"]
 genData = "ET/genlogger/data"
 modemData = "ET/modemlogger/data"
 powerData = "ET/powerlogger/data"
-
+intelimainsData = "ET/intelimains/data"
 client = mqtt_client.Client()
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
