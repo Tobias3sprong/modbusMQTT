@@ -95,7 +95,7 @@ def modbusTcpConnect(teltonika):
         time.sleep(1)
 
 def modbusTcpConnect(intelimains):
-    print("Attempting to connect to Modbus TCP server...")
+    print("Attempting to connect to IM Modbus TCP server...")
     while not intelimains.connect():
         print("Modbus TCP initialisation failed")
         time.sleep(1)
