@@ -65,6 +65,10 @@ teltonika = ModbusTcpClient(
     host="127.0.0.1",
     port=502
 )
+intelimains = ModbusTcpClient(
+    host="192.168.1.122",
+    port=502
+)
 
 # Set up modbus RTU for powerlogger
 powerlogger = ModbusSerialClient(
@@ -87,6 +91,12 @@ def modbusConnect(comap):
 def modbusTcpConnect(teltonika):
     print("Attempting to connect to Modbus TCP server...")
     while not teltonika.connect():
+        print("Modbus TCP initialisation failed")
+        time.sleep(1)
+
+def modbusTcpConnect(intelimains):
+    print("Attempting to connect to Modbus TCP server...")
+    while not intelimains.connect():
         print("Modbus TCP initialisation failed")
         time.sleep(1)
 
@@ -178,6 +188,16 @@ def teltonikaMessage():
         print(f"Error in teltonikaMessage: {e}")
         raise
 
+def intelimainsMessage():
+    try:
+        response = intelimains.read_holding_registers(1324, count=8)
+        if not hasattr(response, 'registers'):
+            raise ValueError("No registers in response")
+        print(response.registers)
+    except Exception as e:
+        print(f"Error in intelimainsMessage: {e}")
+        raise
+
 def check_powerlogger_slave(client, slave_id):
     """Check if a powerlogger slave is active at the given address"""
     try:
@@ -266,7 +286,7 @@ def comap_loop(comap):
             modbusMessage(comap, slave_id)
         except Exception as e:
             print(f"Error occurred: {e}. Reconnecting and rediscovering slave id...")
-            modbusConnect(comap)
+            modbusConnect(comap)    
             # This call will loop internally until it finds a valid slave id.
             slave_id = discover_slave_id(comap, start=1, end=32)
             print(f"Rediscovered slave id: {slave_id}")
@@ -281,18 +301,27 @@ def teltonika_loop():
             modbusTcpConnect(teltonika)
         time.sleep(30)
 
+def intelimains_loop():
+    modbusTcpConnect(intelimains)
+    while True:
+        try:
+            intelimainsMessage()
+        except Exception:
+            modbusTcpConnect(intelimains)
+        time.sleep(5)
 if __name__ == "__main__":
     thread_modbusA = threading.Thread(target=comap_loop, args=(comapA,), daemon=True)
     thread_modbusB = threading.Thread(target=comap_loop, args=(comapB,), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
     thread_wan_ip = threading.Thread(target=send_wan_ip, daemon=True)
     thread_powerlogger = threading.Thread(target=powerlogger_loop, daemon=True)
-    
+    thread_intelimains = threading.Thread(target=intelimains_loop, daemon=True)
     thread_modbusA.start()
 #    thread_modbusB.start()
     thread_teltonika.start()
     thread_wan_ip.start()
     thread_powerlogger.start()
+    thread_intelimains.start()
 
     while True:
         time.sleep(10)
