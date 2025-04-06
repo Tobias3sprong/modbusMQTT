@@ -65,6 +65,7 @@ teltonika = ModbusTcpClient(
     host="127.0.0.1",
     port=502
 )
+
 intelimains = ModbusTcpClient(
     host="192.168.1.122",
     port=502
@@ -318,9 +319,9 @@ if __name__ == "__main__":
     thread_intelimains = threading.Thread(target=intelimains_loop, daemon=True)
     thread_modbusA.start()
 #    thread_modbusB.start()
-    thread_teltonika.start()
+#    thread_teltonika.start()
     thread_wan_ip.start()
-    thread_powerlogger.start()
+#    thread_powerlogger.start()
     thread_intelimains.start()
 
     while True:
