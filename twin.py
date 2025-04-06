@@ -67,7 +67,7 @@ teltonika = ModbusTcpClient(
 )
 
 intelimains = ModbusTcpClient(
-    host="192.168.1.122",
+    host="192.168.1.222",
     port=502
 )
 
