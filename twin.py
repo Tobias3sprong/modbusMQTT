@@ -204,7 +204,7 @@ def intelimainsMessage():
         message = {
             "timestamp": time.time(),
             "controllerName": controllerName,
-            "block": block1 + block2,
+            "data": block1 + block2,
         }
         print(message)
         client.publish(intelimainsData, json.dumps(message))
