@@ -216,6 +216,7 @@ def check_powerlogger_slave(slave_id):
     """Check if a powerlogger slave is active at the given address"""
     try:
         # Try to read registers that should be present on a powerlogger
+        print(f"Checking powerlogger slave {slave_id}")
         response = powerlogger.read_holding_registers(1000, count=2, slave=slave_id)
         if response is None:
             print(f"No response from slave {slave_id}")
