@@ -284,11 +284,18 @@ def powerlogger_loop():
             
             # Get router serial from teltonika
             try:
+                # Ensure we have a connection to the Teltonika device
+                if not teltonika.connected:
+                    print("Reconnecting to Teltonika device...")
+                    teltonika.connect()
+                
                 response = teltonika.read_holding_registers(39, count=16)
-                if hasattr(response, 'registers'):
+                if response is not None and hasattr(response, 'registers'):
                     byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
                     routerSerial = byte_data.decode('ascii').split('\00')[0]
+                    print(f"Retrieved router serial: {routerSerial}")
                 else:
+                    print("No valid response from Teltonika device")
                     routerSerial = ""
             except Exception as e:
                 print(f"Error getting router serial: {e}")
