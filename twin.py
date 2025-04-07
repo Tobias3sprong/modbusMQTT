@@ -217,8 +217,10 @@ def check_powerlogger_slave(client, slave_id):
     try:
         # Try to read registers that should be present on a powerlogger
         response = client.read_holding_registers(int(0x1200), count=1, slave=slave_id)
+        print(response)
         return response is not None and not hasattr(response, 'isError')
     except Exception:
+        print(f"Error in check_powerlogger_slave for slave {slave_id}: {e}")
         return False
 
 def publish_powerlog(client, slave_id):
