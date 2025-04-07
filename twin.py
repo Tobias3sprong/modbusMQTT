@@ -82,7 +82,7 @@ powerlogger = ModbusSerialClient(
     retries=1
 )
 powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
-
+routerSerial = ""
 def modbusConnect(comap):
     print(f"Attempting to connect to {comap}")
     while not comap.connect():
@@ -152,6 +152,7 @@ def modbusMessage(comap, slaveID):
         raise
 
 def teltonikaMessage():
+    global routerSerial
     try:
         response = teltonika.read_holding_registers(143, count=4)
         if not hasattr(response, 'registers'):
@@ -288,18 +289,9 @@ def powerlogger_loop():
                 if not teltonika.connected:
                     print("Reconnecting to Teltonika device...")
                     teltonika.connect()
-                
-                response = teltonika.read_holding_registers(39, count=16)
-                if response is not None and hasattr(response, 'registers'):
-                    byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
-                    routerSerial = byte_data.decode('ascii').split('\00')[0]
-                    print(f"Retrieved router serial: {routerSerial}")
-                else:
-                    print("No valid response from Teltonika device")
-                    routerSerial = ""
             except Exception as e:
-                print(f"Error getting router serial: {e}")
-                routerSerial = ""
+                print(f"Error in powerlogger_loop: {e}")
+                time.sleep(5)  # Wait before retrying
             
             # Poll active slaves
             for slave_id in active_slaves:
