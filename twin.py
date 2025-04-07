@@ -101,12 +101,12 @@ def modbusTcpConnect(intelimains):
         print("Modbus TCP IM initialisation failed")
         time.sleep(1)
 
-def discover_slave_id(modbus_client, start=1, end=247):
+def discover_slave_id(plModbus_client, start=1, end=247):
     while True:
         for slave in range(start, end + 1):
             print(f"Testing slave id: {slave} ...")
             try:
-                response = modbus_client.read_holding_registers(3000, count=8, slave=slave)
+                response = plModbus_client.read_holding_registers(3000, count=8, slave=slave)
                 if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
                     print(f"Device found on slave id {slave}")
                     return slave
@@ -212,11 +212,11 @@ def intelimainsMessage():
         print(f"Error in intelimainsMessage: {e}")
         raise
 
-def check_powerlogger_slave(client, slave_id):
+def check_powerlogger_slave(slave_id):
     """Check if a powerlogger slave is active at the given address"""
     try:
         # Try to read registers that should be present on a powerlogger
-        response = client.read_holding_registers(int(0x1200), count=1, slave=slave_id)
+        response = powerlogger.read_holding_registers(int(0x1200), count=1, slave=slave_id)
         if response is None:
             print(f"No response from slave {slave_id}")
             return False
