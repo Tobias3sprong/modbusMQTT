@@ -217,17 +217,30 @@ def check_powerlogger_slave(client, slave_id):
     try:
         # Try to read registers that should be present on a powerlogger
         response = client.read_holding_registers(int(0x1200), count=1, slave=slave_id)
-        print(response)
-        return response is not None and not hasattr(response, 'isError')
-    except Exception:
+        if response is None:
+            print(f"No response from slave {slave_id}")
+            return False
+        if hasattr(response, 'isError'):
+            print(f"Error response from slave {slave_id}: {response}")
+            return False
+        print(f"Valid response from slave {slave_id}: {response.registers}")
+        return True
+    except Exception as e:
         print(f"Error in check_powerlogger_slave for slave {slave_id}: {e}")
         return False
 
 def publish_powerlog(client, slave_id):
     """Publish powerlogger data for a specific slave ID"""
     try:
+        print(f"Reading registers for slave {slave_id}")
         block1 = powerlogger.read_holding_registers(int(0x1000), count=122, slave=slave_id)
+        if block1 is None or hasattr(block1, 'isError'):
+            raise Exception(f"Failed to read block1 registers: {block1}")
+            
         ct = powerlogger.read_holding_registers(int(0x1200), count=1, slave=slave_id)
+        if ct is None or hasattr(ct, 'isError'):
+            raise Exception(f"Failed to read CT registers: {ct}")
+            
         hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
         hexStringCT = ''.join('{:04x}'.format(b) for b in ct.registers)
         message = {
@@ -235,7 +248,7 @@ def publish_powerlog(client, slave_id):
             "slaveID": slave_id,
             "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
         }
-        print(message)
+        print(f"Publishing message for slave {slave_id}: {message}")
         result = client.publish(powerData, json.dumps(message))
         status = result[0]
         if not status == 0:
@@ -251,12 +264,16 @@ def powerlogger_loop():
         try:
             # Check for new devices on addresses 1-5
             for slave_id in range(1, 6):
-                if slave_id not in active_slaves and check_powerlogger_slave(powerlogger, slave_id):
-                    print(f"Found new powerlogger device at slave ID {slave_id}")
-                    active_slaves.add(slave_id)
-                elif slave_id in active_slaves and not check_powerlogger_slave(powerlogger, slave_id):
-                    print(f"Lost connection to powerlogger at slave ID {slave_id}")
-                    active_slaves.remove(slave_id)
+                if slave_id not in active_slaves:
+                    print(f"Checking for new device at slave ID {slave_id}")
+                    if check_powerlogger_slave(powerlogger, slave_id):
+                        print(f"Found new powerlogger device at slave ID {slave_id}")
+                        active_slaves.add(slave_id)
+                elif slave_id in active_slaves:
+                    print(f"Verifying existing device at slave ID {slave_id}")
+                    if not check_powerlogger_slave(powerlogger, slave_id):
+                        print(f"Lost connection to powerlogger at slave ID {slave_id}")
+                        active_slaves.remove(slave_id)
             
             # Poll active slaves
             for slave_id in active_slaves:
@@ -269,9 +286,11 @@ def powerlogger_loop():
             
             # If no active slaves, wait a bit longer before checking again
             if not active_slaves:
-                time.sleep(5)
+                print("No active powerlogger devices found, waiting...")
+                time.sleep(10)
             else:
-                time.sleep(1)
+                print(f"Active powerlogger devices: {active_slaves}")
+                time.sleep(10)
                 
         except Exception as e:
             print(f"Error in powerlogger_loop: {e}")
