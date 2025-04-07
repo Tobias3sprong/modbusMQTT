@@ -231,7 +231,7 @@ def check_powerlogger_slave(slave_id):
         print(f"Error in check_powerlogger_slave for slave {slave_id}: {e}")
         return False
 
-def publish_powerlog(client, slave_id):
+def publish_powerlog(client, slave_id, routerSerial):
     """Publish powerlogger data for a specific slave ID"""
     try:
         print(f"Reading registers for slave {slave_id}")
@@ -252,6 +252,7 @@ def publish_powerlog(client, slave_id):
         message = {
             "timestamp": time.time(),
             "slaveID": slave_id,
+            "routerSerial": routerSerial,
             "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
         }
         print(f"Publishing message for slave {slave_id}: {message}")
@@ -281,10 +282,22 @@ def powerlogger_loop():
                         print(f"Lost connection to powerlogger at slave ID {slave_id}")
                         active_slaves.remove(slave_id)
             
+            # Get router serial from teltonika
+            try:
+                response = teltonika.read_holding_registers(39, count=16)
+                if hasattr(response, 'registers'):
+                    byte_data = b''.join(struct.pack('>H', reg) for reg in response.registers)
+                    routerSerial = byte_data.decode('ascii').split('\00')[0]
+                else:
+                    routerSerial = ""
+            except Exception as e:
+                print(f"Error getting router serial: {e}")
+                routerSerial = ""
+            
             # Poll active slaves
             for slave_id in active_slaves:
                 try:
-                    publish_powerlog(client, slave_id)
+                    publish_powerlog(client, slave_id, routerSerial)
                 except Exception as e:
                     print(f"Error polling slave {slave_id}: {e}")
                     # Don't remove immediately, let the next check_powerlogger_slave decide
