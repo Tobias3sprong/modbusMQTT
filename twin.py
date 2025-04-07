@@ -266,12 +266,12 @@ def powerlogger_loop():
             for slave_id in range(1, 6):
                 if slave_id not in active_slaves:
                     print(f"Checking for new device at slave ID {slave_id}")
-                    if check_powerlogger_slave(powerlogger, slave_id):
+                    if check_powerlogger_slave(slave_id):
                         print(f"Found new powerlogger device at slave ID {slave_id}")
                         active_slaves.add(slave_id)
                 elif slave_id in active_slaves:
                     print(f"Verifying existing device at slave ID {slave_id}")
-                    if not check_powerlogger_slave(powerlogger, slave_id):
+                    if not check_powerlogger_slave(slave_id):
                         print(f"Lost connection to powerlogger at slave ID {slave_id}")
                         active_slaves.remove(slave_id)
             
