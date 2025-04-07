@@ -218,9 +218,13 @@ def check_powerlogger_slave(slave_id):
         # Try to read registers that should be present on a powerlogger
         print(f"Checking powerlogger slave {slave_id}")
         response = powerlogger.read_holding_registers(1200, count=1, slave=slave_id)
+        print(f"Response from slave {slave_id}: {response}")
         if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
             print(f"Valid response from slave {slave_id}: {response.registers}")
             return True
+        elif response is not None and hasattr(response, 'registers') and len(response.registers) == 0:
+            print(f"Empty response from slave {slave_id}")
+            return False
         print(f"No valid response from slave {slave_id}")
         return False
     except Exception as e:
