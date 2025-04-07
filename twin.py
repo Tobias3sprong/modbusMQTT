@@ -78,8 +78,7 @@ powerlogger = ModbusSerialClient(
     bytesize=8,
     parity='N',
     baudrate=19200,
-    timeout=0.3,
-    retries=1
+    timeout=0.3 
 )
 powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
 
@@ -216,7 +215,7 @@ def check_powerlogger_slave(client, slave_id):
     """Check if a powerlogger slave is active at the given address"""
     try:
         # Try to read registers that should be present on a powerlogger
-        response = client.read_holding_registers(int(0x1000), count=1, slave=slave_id)
+        response = client.read_holding_registers(int(0x1200), count=1, slave=slave_id)
         return response is not None and not hasattr(response, 'isError')
     except Exception:
         return False
