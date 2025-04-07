@@ -1,3 +1,4 @@
+PORT="/dev/usb_serial_ca4780cf"
 PID=$(lsof -t "$PORT")
 
 if [ -n "$PID" ]; then
