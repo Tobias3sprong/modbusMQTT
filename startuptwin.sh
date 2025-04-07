@@ -1,4 +1,12 @@
+PID=$(lsof -t "$PORT")
 
+if [ -n "$PID" ]; then
+    echo "Port $PORT is in use by PID $PID. Killing process..."
+    kill -9 "$PID"
+    echo "Process killed."
+else
+    echo "Port $PORT is not in use."
+fi
 # 1) Check and install required system packages with opkg (only if missing).
 REQUIRED_PACKAGES="python3-light python3-pip git git-http"
 
