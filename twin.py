@@ -73,7 +73,7 @@ intelimains = ModbusTcpClient(
 
 # Set up modbus RTU for powerlogger
 powerlogger = ModbusSerialClient(
-    port='/dev/usb_serial_dbe17d6e',
+    port='/dev/usb_serial_ca4780cf',
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -323,6 +323,7 @@ def intelimains_loop():
         except Exception:
             modbusTcpConnect(intelimains)
         time.sleep(5)
+        
 if __name__ == "__main__":
     thread_modbusA = threading.Thread(target=comap_loop, args=(comapA,), daemon=True)
     thread_modbusB = threading.Thread(target=comap_loop, args=(comapB,), daemon=True)
