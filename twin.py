@@ -232,6 +232,7 @@ def publish_powerlog(client, slave_id):
             "slaveID": slave_id,
             "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
         }
+        print(message)
         result = client.publish(powerData, json.dumps(message))
         status = result[0]
         if not status == 0:
