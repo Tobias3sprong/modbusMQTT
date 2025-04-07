@@ -223,7 +223,7 @@ def check_powerlogger_slave(slave_id):
             return False
         if hasattr(response, 'isError'):
             print(f"Error response from slave {slave_id}: {response}")
-            print(response.registers[1])
+            print(response.registers)
             return False
         print(f"Valid response from slave {slave_id}: {response.registers}")
         return True
