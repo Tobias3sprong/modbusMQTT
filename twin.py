@@ -236,12 +236,16 @@ def publish_powerlog(client, slave_id):
     try:
         print(f"Reading registers for slave {slave_id}")
         block1 = powerlogger.read_holding_registers(int(0x1000), count=122, slave=slave_id)
-        if block1 is None or hasattr(block1, 'isError'):
-            raise Exception(f"Failed to read block1 registers: {block1}")
+        if block1 is None:
+            raise Exception("No response received")
+        if not hasattr(block1, 'registers'):
+            raise Exception("Response has no registers")
             
         ct = powerlogger.read_holding_registers(int(0x1200), count=1, slave=slave_id)
-        if ct is None or hasattr(ct, 'isError'):
-            raise Exception(f"Failed to read CT registers: {ct}")
+        if ct is None:
+            raise Exception("No response received for CT registers")
+        if not hasattr(ct, 'registers'):
+            raise Exception("CT response has no registers")
             
         hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
         hexStringCT = ''.join('{:04x}'.format(b) for b in ct.registers)
@@ -253,7 +257,7 @@ def publish_powerlog(client, slave_id):
         print(f"Publishing message for slave {slave_id}: {message}")
         result = client.publish(powerData, json.dumps(message))
         status = result[0]
-        if not status == 0:
+        if status != 0:
             print(f'Failed to send message to topic {powerData} for slave {slave_id}')
     except Exception as e:
         print(f"Error in publish_powerlog for slave {slave_id}: {e}")
