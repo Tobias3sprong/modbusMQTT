@@ -330,11 +330,11 @@ if __name__ == "__main__":
     thread_wan_ip = threading.Thread(target=send_wan_ip, daemon=True)
     thread_powerlogger = threading.Thread(target=powerlogger_loop, daemon=True)
     thread_intelimains = threading.Thread(target=intelimains_loop, daemon=True)
-#    thread_modbusA.start()
-#    thread_modbusB.start()
-#    thread_teltonika.start()
+    thread_modbusA.start()
+    thread_modbusB.start()
+    thread_teltonika.start()
     thread_wan_ip.start()
-#    thread_powerlogger.start()
+    thread_powerlogger.start()
     thread_intelimains.start()
 
     while True:
