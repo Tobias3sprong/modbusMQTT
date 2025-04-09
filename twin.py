@@ -64,38 +64,85 @@ def check_network():
     with network_status_lock:
         network_status["last_check"] = current_time
         try:
-            # Try to connect to a reliable service
-            response = requests.get('https://api.ipify.org', timeout=5)
-            if response.status_code == 200:
-                if not network_status["online"]:
-                    logger.info("Network is back online")
-                network_status["online"] = True
-                network_status["reconnect_attempts"] = 0
-                return True
-        except Exception:
-            if network_status["online"]:
-                logger.warning("Network appears to be offline")
-            network_status["online"] = False
-            return False
+            # Try connecting to multiple services in case one is blocked
+            try:
+                # Primary check - ipify
+                response = requests.get('https://api.ipify.org', timeout=5)
+                if response.status_code == 200:
+                    if not network_status["online"]:
+                        logger.info("Network is back online (via ipify)")
+                    network_status["online"] = True
+                    network_status["reconnect_attempts"] = 0
+                    return True
+            except Exception as e:
+                logger.debug(f"Primary network check failed: {e}")
+                
+                # Fallback check - google DNS
+                try:
+                    response = requests.get('https://8.8.8.8', timeout=2)
+                    if not network_status["online"]:
+                        logger.info("Network is back online (via Google DNS)")
+                    network_status["online"] = True
+                    network_status["reconnect_attempts"] = 0
+                    return True
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.debug(f"All network checks failed: {e}")
+            
+        # If we reach here, network is down
+        if network_status["online"]:
+            logger.warning("Network appears to be offline")
+        network_status["online"] = False
+        return False
 
 def send_wan_ip():
     """Send WAN IP periodically"""
+    # Set initial delay to 15 seconds rather than 15 minutes for first check
+    next_check = time.time() + 15
+    
     while True:
         try:
-            if check_network() and client.is_connected():
-                response = requests.get('https://api.ipify.org?format=json', timeout=5)
-                wanIP = response.json()['ip']
-                logger.info(f"Current WAN IP: {wanIP}")
+            current_time = time.time()
+            
+            # Check if it's time to run
+            if current_time < next_check:
+                time.sleep(1)
+                continue
                 
-                with mqtt_lock:
-                    result = client.publish("TwinsetIP", wanIP)
-                    if result[0] != 0:
-                        logger.warning(f"Failed to publish WAN IP: {result}")
+            # Schedule next regular check
+            next_check = current_time + (60 * 15)  # 15 minutes
+            
+            # Log that we're attempting a check
+            logger.info("Checking WAN IP address...")
+            
+            network_status = check_network()
+            mqtt_connected = client.is_connected()
+            
+            if not network_status:
+                logger.info("WAN IP check skipped - network appears to be offline")
+            elif not mqtt_connected:
+                logger.info("WAN IP check skipped - MQTT disconnected")
             else:
-                logger.debug("Network offline or MQTT disconnected - skipping WAN IP update")
+                try:
+                    response = requests.get('https://api.ipify.org?format=json', timeout=5)
+                    wanIP = response.json()['ip']
+                    logger.info(f"Current WAN IP: {wanIP}")
+                    
+                    with mqtt_lock:
+                        result = client.publish("TwinsetIP", wanIP)
+                        if result[0] != 0:
+                            logger.warning(f"Failed to publish WAN IP: {result}")
+                        else:
+                            logger.info(f"Successfully published WAN IP: {wanIP}")
+                except Exception as e:
+                    logger.error(f"Error getting/sending WAN IP: {e}")
         except Exception as e:
-            logger.error(f"Error getting/sending WAN IP: {e}")
-        time.sleep(60*15)  # 15 minutes
+            logger.error(f"Unexpected error in send_wan_ip: {e}")
+            # Make sure we don't get stuck in a tight loop if there's an exception
+            time.sleep(60)
+            next_check = time.time() + (60 * 15)  # Reset next check time
 
 def get_backoff_time():
     """Calculate exponential backoff time for reconnection attempts"""
