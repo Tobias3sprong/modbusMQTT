@@ -2,11 +2,24 @@ import json
 import time
 import struct
 import threading
+import logging
 from struct import unpack
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
 import requests
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("error_log.txt"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # Load credentials
 json_file_path = r".secrets/credentials.json"
 with open(json_file_path, "r") as f:
@@ -14,7 +27,7 @@ with open(json_file_path, "r") as f:
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        print("Connected to MQTT broker")
+        logger.info("Connected to MQTT broker")
         import requests
 
 def send_wan_ip():
@@ -22,20 +35,20 @@ def send_wan_ip():
         try:
             response = requests.get('https://api.ipify.org?format=json')
             wanIP = response.json()['ip']
-            print(f"Current WAN IP: {wanIP}")
+            logger.info(f"Current WAN IP: {wanIP}")
             client.publish("TwinsetIP", wanIP)
         except Exception as e:
-            print(f"Error getting/sending WAN IP: {e}")
+            logger.error(f"Error getting/sending WAN IP: {e}")
         time.sleep(60*15)  # 15 minutes
 
 def on_disconnect(client, userdata, rc):
-    print(f"MQTT disconnected with result code: {rc}")
+    logger.info(f"MQTT disconnected with result code: {rc}")
     if rc != 0:
-        print("Unexpected disconnection. Attempting to reconnect...")
+        logger.warning("Unexpected disconnection. Attempting to reconnect...")
         try:
             client.reconnect()
         except Exception as e:
-            print(f"Reconnect failed: {e}")
+            logger.error(f"Reconnect failed: {e}")
 
 # MODBUS
 # Set up modbus RTU
@@ -84,38 +97,38 @@ powerlogger = ModbusSerialClient(
 powerlogger.transaction_retries = 1  # Set the number of retries for Modbus operations
 routerSerial = ""
 def modbusConnect(comap):
-    print(f"Attempting to connect to {comap}")
+    logger.info(f"Attempting to connect to {comap}")
     while not comap.connect():
-        print("Modbus initialisation failed")
+        logger.error("Modbus initialisation failed")
         time.sleep(1)
 
 def modbusTcpConnect(teltonika):
-    print("Attempting to connect to Modbus TCP server...")
+    logger.info("Attempting to connect to Modbus TCP server...")
     while not teltonika.connect():
-        print("Modbus TCP initialisation failed")
+        logger.error("Modbus TCP initialisation failed")
         time.sleep(1)
 
 def modbusTcpConnect(intelimains):
-    print("Attempting to connect to IM Modbus TCP server...")
+    logger.info("Attempting to connect to IM Modbus TCP server...")
     while not intelimains.connect():
-        print("Modbus TCP IM initialisation failed")
+        logger.error("Modbus TCP IM initialisation failed")
         time.sleep(1)
 
 def discover_slave_id(plModbus_client, start=1, end=247):
     while True:
         for slave in range(start, end + 1):
-            print(f"Testing slave id: {slave} ...")
+            logger.info(f"Testing slave id: {slave} ...")
             try:
                 response = plModbus_client.read_holding_registers(3000, count=8, slave=slave)
                 if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
-                    print(f"Device found on slave id {slave}")
+                    logger.info(f"Device found on slave id {slave}")
                     return slave
                 else:
-                    print(f"No valid response from slave id {slave}")
+                    logger.debug(f"No valid response from slave id {slave}")
             except Exception as e:
-                print(f"Error testing slave id {slave}: {e}")
+                logger.error(f"Error testing slave id {slave}: {e}")
             #time.sleep(0.2)
-        print("Device not found in the specified slave id range. Restarting discovery...")
+        logger.warning("Device not found in the specified slave id range. Restarting discovery...")
         time.sleep(5)
 
 def modbusMessage(comap, slaveID):
@@ -145,10 +158,10 @@ def modbusMessage(comap, slaveID):
             "dataBlock4": block4,
             "FW": "0.7.0",
         }
-        print(message)
+        logger.info(message)
         client.publish(genData, json.dumps(message))
     except Exception as e:
-        print(f"Error in modbusMessage for slave {slaveID}: {e}")
+        logger.error(f"Error in modbusMessage for slave {slaveID}: {e}")
         raise
 
 def teltonikaMessage():
@@ -167,9 +180,9 @@ def teltonikaMessage():
             # Decode as UTF-8 and strip any null characters
             routerSerial = byte_data.decode('ascii').split('\00')[0]
             teltonika.close() 
-            print(routerSerial)
+            logger.info(routerSerial)
         else:
-            print("No registers found in response")
+            logger.warning("No registers found in response")
         combined = (latlon[0] << 16) | latlon[1]
         bytes_data = combined.to_bytes(4, byteorder='big')
         latitude = unpack('>f', bytes_data)[0]
@@ -184,10 +197,10 @@ def teltonikaMessage():
             "latitude": latitude,
             "longitude": longitude
         }
-        print(message)
+        logger.info(message)
         client.publish(modemData, json.dumps(message))
     except Exception as e:
-        print(f"Error in teltonikaMessage: {e}")
+        logger.error(f"Error in teltonikaMessage: {e}")
         raise
 
 def intelimainsMessage():
@@ -207,35 +220,35 @@ def intelimainsMessage():
             "controllerName": controllerName,
             "data": block1 + block2,
         }
-        print(message)
+        logger.info(message)
         client.publish(intelimainsData, json.dumps(message))
     except Exception as e:
-        print(f"Error in intelimainsMessage: {e}")
+        logger.error(f"Error in intelimainsMessage: {e}")
         raise
 
 def check_powerlogger_slave(slave_id):
     """Check if a powerlogger slave is active at the given address"""
     try:
         # Try to read registers that should be present on a powerlogger
-        print(f"Checking powerlogger slave {slave_id}")
+        logger.info(f"Checking powerlogger slave {slave_id}")
         response = powerlogger.read_holding_registers(int(0x1200), count=1, slave=slave_id)
-        print(f"Response from slave {slave_id}: {response}")
+        logger.debug(f"Response from slave {slave_id}: {response}")
         if response is not None and hasattr(response, 'registers') and len(response.registers) > 0:
-            print(f"Valid response from slave {slave_id}: {response.registers}")
+            logger.info(f"Valid response from slave {slave_id}: {response.registers}")
             return True
         elif response is not None and hasattr(response, 'registers') and len(response.registers) == 0:
-            print(f"Empty response from slave {slave_id}")
+            logger.debug(f"Empty response from slave {slave_id}")
             return False
-        print(f"No valid response from slave {slave_id}")
+        logger.debug(f"No valid response from slave {slave_id}")
         return False
     except Exception as e:
-        print(f"Error in check_powerlogger_slave for slave {slave_id}: {e}")
+        logger.error(f"Error in check_powerlogger_slave for slave {slave_id}: {e}")
         return False
 
 def publish_powerlog(client, slave_id, routerSerial):
     """Publish powerlogger data for a specific slave ID"""
     try:
-        print(f"Reading registers for slave {slave_id}")
+        logger.info(f"Reading registers for slave {slave_id}")
         block1 = powerlogger.read_holding_registers(int(0x1000), count=122, slave=slave_id)
         if block1 is None:
             raise Exception("No response received")
@@ -256,13 +269,13 @@ def publish_powerlog(client, slave_id, routerSerial):
             "routerSerial": routerSerial,
             "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
         }
-        print(f"Publishing message for slave {slave_id}: {message}")
+        logger.info(f"Publishing message for slave {slave_id}: {message}")
         result = client.publish(powerData, json.dumps(message))
         status = result[0]
         if status != 0:
-            print(f'Failed to send message to topic {powerData} for slave {slave_id}')
+            logger.error(f'Failed to send message to topic {powerData} for slave {slave_id}')
     except Exception as e:
-        print(f"Error in publish_powerlog for slave {slave_id}: {e}")
+        logger.error(f"Error in publish_powerlog for slave {slave_id}: {e}")
         raise
 
 def powerlogger_loop():
@@ -273,24 +286,24 @@ def powerlogger_loop():
             # Check for new devices on addresses 1-5
             for slave_id in range(1, 6):
                 if slave_id not in active_slaves:
-                    print(f"Checking for new device at slave ID {slave_id}")
+                    logger.info(f"Checking for new device at slave ID {slave_id}")
                     if check_powerlogger_slave(slave_id):
-                        print(f"Found new powerlogger device at slave ID {slave_id}")
+                        logger.info(f"Found new powerlogger device at slave ID {slave_id}")
                         active_slaves.add(slave_id)
                 elif slave_id in active_slaves:
-                    print(f"Verifying existing device at slave ID {slave_id}")
+                    logger.debug(f"Verifying existing device at slave ID {slave_id}")
                     if not check_powerlogger_slave(slave_id):
-                        print(f"Lost connection to powerlogger at slave ID {slave_id}")
+                        logger.warning(f"Lost connection to powerlogger at slave ID {slave_id}")
                         active_slaves.remove(slave_id)
             
             # Get router serial from teltonika
             try:
                 # Ensure we have a connection to the Teltonika device
                 if not teltonika.connected:
-                    print("Reconnecting to Teltonika device...")
+                    logger.info("Reconnecting to Teltonika device...")
                     teltonika.connect()
             except Exception as e:
-                print(f"Error in powerlogger_loop: {e}")
+                logger.error(f"Error in powerlogger_loop: {e}")
                 time.sleep(5)  # Wait before retrying
             
             # Poll active slaves
@@ -298,20 +311,20 @@ def powerlogger_loop():
                 try:
                     publish_powerlog(client, slave_id, routerSerial)
                 except Exception as e:
-                    print(f"Error polling slave {slave_id}: {e}")
+                    logger.error(f"Error polling slave {slave_id}: {e}")
                     # Don't remove immediately, let the next check_powerlogger_slave decide
                 time.sleep(1)  # Small delay between polling each device
             
             # If no active slaves, wait a bit longer before checking again
             if not active_slaves:
-                print("No active powerlogger devices found, waiting...")
+                logger.info("No active powerlogger devices found, waiting...")
                 time.sleep(10)
             else:
-                print(f"Active powerlogger devices: {active_slaves}")
+                logger.info(f"Active powerlogger devices: {active_slaves}")
                 time.sleep(10)
                 
         except Exception as e:
-            print(f"Error in powerlogger_loop: {e}")
+            logger.error(f"Error in powerlogger_loop: {e}")
             time.sleep(5)  # Wait before retrying
 
 # MQTT Setup
@@ -339,11 +352,11 @@ def comap_loop(comap):
         try:
             modbusMessage(comap, slave_id)
         except Exception as e:
-            print(f"Error occurred: {e}. Reconnecting and rediscovering slave id...")
+            logger.error(f"Error occurred: {e}. Reconnecting and rediscovering slave id...")
             modbusConnect(comap)    
             # This call will loop internally until it finds a valid slave id.
             slave_id = discover_slave_id(comap, start=1, end=32)
-            print(f"Rediscovered slave id: {slave_id}")
+            logger.info(f"Rediscovered slave id: {slave_id}")
         time.sleep(10)
 
 def teltonika_loop():
@@ -365,6 +378,7 @@ def intelimains_loop():
         time.sleep(5)
         
 if __name__ == "__main__":
+    logger.info("Starting application")
     thread_modbusA = threading.Thread(target=comap_loop, args=(comapA,), daemon=True)
     thread_modbusB = threading.Thread(target=comap_loop, args=(comapB,), daemon=True)
     thread_teltonika = threading.Thread(target=teltonika_loop, daemon=True)
