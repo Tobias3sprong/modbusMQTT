@@ -419,7 +419,7 @@ def publishPowerlog(client):
             binary_data.extend(struct.pack('>I', value & 0xffffffff))
         
         print(f"Binary data size: {len(binary_data)} bytes")
-        result = client.publish(topicPower, binary_data)
+        result = client.publish(topicPower, binary_data, qos=1)
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicPower}')
