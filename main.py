@@ -341,6 +341,10 @@ def reset_aggregation():
     sample_count = 0
 
 def publishPowerlog(client):
+    """
+    Publish power data in binary format instead of hex strings.
+    All the same data is included, just more efficiently encoded.
+    """
     global routerSerial, sample_count
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
     global voltage_l2_min, voltage_l2_max, voltage_l2_sum
@@ -378,11 +382,18 @@ def publishPowerlog(client):
         all_registers = block8.registers + block1.registers + block2.registers + block3.registers + block4.registers + \
                         block5.registers + block6.registers + block7.registers
         
-        # Convert to hex string
-        hexString = ''.join('{:04x}'.format(b) for b in all_registers)
+        # Initialize binary data
+        binary_data = bytearray()
         
-        # Create hex string for aggregated values (scale by 1000 to preserve 3 decimal places)
-        # Format: v1min,v1max,v1avg,v2min,v2max,v2avg,v3min,v3max,v3avg,c1min,c1max,c1avg,c2min,c2max,c2avg,c3min,c3max,c3avg,samples
+        # Add timestamp (4 bytes)
+        timestamp = int(time.time())
+        binary_data.extend(struct.pack('>I', timestamp))
+        
+        # Add register data
+        for reg in all_registers:
+            binary_data.extend(struct.pack('>H', reg))
+        
+        # Add aggregated values
         aggregated_values = [
             int(voltage_l1_min * 1000) if voltage_l1_min != float('inf') else 0,
             int(voltage_l1_max * 1000) if voltage_l1_max != float('-inf') else 0,
@@ -404,17 +415,11 @@ def publishPowerlog(client):
             int(current_l3_avg * 1000),
             sample_count
         ]
-        aggregatedHexString = ''.join('{:08x}'.format(v & 0xffffffff) for v in aggregated_values)
+        for value in aggregated_values:
+            binary_data.extend(struct.pack('>I', value & 0xffffffff))
         
-        # Format timestamp as 16-character hex string (removing '0x' prefix)
-        timestamp_hex = '{:016x}'.format(int(time.time()))
-        
-        # Combine all data into a single hex string
-        # Format: timestamp + register data + aggregated data
-        message = timestamp_hex + hexString + aggregatedHexString
-        
-        print(message)
-        result = client.publish(topicPower, message)
+        print(f"Binary data size: {len(binary_data)} bytes")
+        result = client.publish(topicPower, binary_data)
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicPower}')
