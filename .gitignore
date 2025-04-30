@@ -4,3 +4,9 @@ rc.local.sh
 api_test.py
 localtest.py
 modbustcp.py
+janitza modbus.txt
+legrandSettings.py
+modbusParser.js
+setZero.py
+writetest.py
+yanitza.py
