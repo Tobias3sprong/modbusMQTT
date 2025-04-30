@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/tty.usbserial-FTWJW5L4', # for production use /dev/ttyHS0
+    port='/dev//dev/ttyHS0', # for production use /dev/ttyHS0
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -24,8 +24,8 @@ modbusclient = ModbusSerialClient(
 )
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    host="178.228.235.29",  #localhost for production use
-    port=500
+    host="localhost",  #localhost for production use
+    port=502
 )
 
 routerSerial = "0000000000000000"
