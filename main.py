@@ -6,7 +6,7 @@ import threading
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
-
+import uuid
 #l Load credentials
 json_file_path = r".secrets/credentials.json"
 with open(json_file_path, "r") as f:
@@ -509,7 +509,8 @@ msgCount = 0
 
 flag_connected = True
 lastLogMessage = ""
-client = mqtt_client.Client()
+client_id = f"client-{uuid.uuid4()}"
+client = mqtt_client.Client(client_id=client_id, clean_session=False)
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
 client.on_message = on_message
