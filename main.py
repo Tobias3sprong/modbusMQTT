@@ -1,6 +1,7 @@
 import json
 import time
 import struct
+import random
 import threading
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
@@ -14,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyHS0',
+    port='/dev/tty.usbserial-FTWJW5L4', # for production use /dev/ttyHS0
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -23,11 +24,33 @@ modbusclient = ModbusSerialClient(
 )
 # Set up modbus TCP
 tcpClient = ModbusTcpClient(
-    host="localhost",
-    port=502
+    host="178.228.235.29",  #localhost for production use
+    port=500
 )
 
 routerSerial = "0000000000000000"
+
+# Variables for voltage and current aggregation
+voltage_l1_min = float('inf')
+voltage_l1_max = float('-inf')
+voltage_l1_sum = 0
+voltage_l2_min = float('inf')
+voltage_l2_max = float('-inf')
+voltage_l2_sum = 0
+voltage_l3_min = float('inf')
+voltage_l3_max = float('-inf')
+voltage_l3_sum = 0
+current_l1_min = float('inf')
+current_l1_max = float('-inf')
+current_l1_sum = 0
+current_l2_min = float('inf')
+current_l2_max = float('-inf')
+current_l2_sum = 0
+current_l3_min = float('inf')
+current_l3_max = float('-inf')
+current_l3_sum = 0
+sample_count = 0
+polling_active = True
 
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
@@ -48,6 +71,103 @@ def modbusTcpConnect(tcpClient):
     client.subscribe(topicConfig)
     logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
 
+def send_master_unlock(slaveid):
+    result = modbusclient.write_registers(address=0x2700, values=[0x5AA5], slave=slaveid)
+    if result.isError():
+        print(f"Error sending Master Unlock Key: {result}")
+        return False
+    return True
+
+def save_to_eeprom(slaveid):
+    if not send_master_unlock(slaveid):
+        return False
+    
+    result = modbusclient.write_registers(address=0x2600, values=[0x000A], slave=slaveid)
+    if result.isError():
+        print(f"Error saving to EEPROM: {result}")
+        return False
+    return True
+
+def setSerialNumber(slaveid):
+    try:
+        # Check current value
+        check_result = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
+        if check_result.isError():
+            print(f"Error reading register 0x2213: {check_result}")
+            return False
+            
+        current_value = check_result.registers[0]
+        print(f"Register 0x2213 value: {hex(current_value)}")
+        
+        # Only modify if value is 0
+        if current_value != 0:
+            print("Register is not 0. No modification needed.")
+            return True
+        
+        # Read all registers in the group
+        read_result = modbusclient.read_holding_registers(address=0x2200, count=24, slave=slaveid)
+        if read_result.isError():
+            print(f"Error reading register group: {read_result}")
+            return False
+        
+        # Update register
+        values = read_result.registers.copy()
+        new_value = random.randint(1, 9999)
+        values[19] = new_value  # Register 0x2213
+        
+        # Write and save changes
+        if not send_master_unlock(slaveid) or \
+           modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
+           not save_to_eeprom(slaveid):
+            print("Failed to write or save changes")
+            return False
+            
+        # Verify change
+        verify = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
+        if verify.isError() or verify.registers[0] != new_value:
+            print("Verification failed")
+            return False
+            
+        print(f"Successfully updated register 0x2213 to {new_value} ({hex(new_value)})")
+        return True
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+    
+def insertStandardSettings(slaveid):
+    try:
+        # Read current values
+        read_result = modbusclient.read_holding_registers(address=0x2000, count=16, slave=slaveid)
+        if read_result.isError():
+            print(f"Error reading register group: {read_result}")
+            return False
+        
+        values = read_result.registers.copy()
+        
+        values[5] = 0
+        values[8] = 2
+        values[10] = 0
+        values[11] = 0
+        values[12] = 0
+        values[13] = 0
+        values[14] = 0
+        values[15] = 0
+
+        # Write and save changes
+        if not send_master_unlock(slaveid) or \
+           modbusclient.write_registers(address=0x2000, values=values, slave=slaveid).isError() or \
+           not save_to_eeprom(slaveid):
+            print("Failed to write or save changes")
+            return False
+            
+        print(f"Successfully updated standard settings")
+        return True
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
 
 def logMQTT(client, topicLog, logMessage):
     global lastLogMessage
@@ -67,7 +187,6 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         client.subscribe(topicReset)
         client.subscribe(topicConfig)
-
 
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
@@ -126,23 +245,183 @@ def on_message(client, userdata, msg):
             print("An error occurred:", error)  # An error occurred: name 'x' is not defined
             logMQTT(client, topicLog, "Received invalid config message")
 
-def publishPowerlog(client):
-    global routerSerial
+def poll_voltage_and_current(slaveid=1):
+    global voltage_l1_min, voltage_l1_max, voltage_l1_sum
+    global voltage_l2_min, voltage_l2_max, voltage_l2_sum
+    global voltage_l3_min, voltage_l3_max, voltage_l3_sum
+    global current_l1_min, current_l1_max, current_l1_sum
+    global current_l2_min, current_l2_max, current_l2_sum
+    global current_l3_min, current_l3_max, current_l3_sum
+    global sample_count
+    
     try:
-        block1 = modbusclient.read_holding_registers(int(0x1000), count=122, slave=1)
-        ct = modbusclient.read_holding_registers(int(0x1200),count=1, slave=1)
-        hexString = ''.join('{:04x}'.format(b) for b in block1.registers)
-        hexStringCT = ''.join('{:04x}'.format(b) for b in ct.registers)
-        message = {
-            "timestamp": time.time(),
-            "routerSerial": int(routerSerial),
-            "slaveID": 1,
-            "rtuData": hexString[:156] + hexString[344:] + hexStringCT,
-        }
-        result = client.publish(topicPower, json.dumps(message))
+        # Read voltage and current registers (block1)
+        block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+        
+        if block1.isError():
+            print("Error reading voltage and current registers")
+            return
+        
+        # Extract values (assuming registers contain raw values that might need scaling)
+        # Voltage L1 (registers 0-1)
+        voltage_l1 = (block1.registers[0] << 16 | block1.registers[1]) / 1000.0  # assuming voltage in V with scaling
+        
+        # Voltage L2 (registers 2-3)
+        voltage_l2 = (block1.registers[2] << 16 | block1.registers[3]) / 1000.0
+        
+        # Voltage L3 (registers 4-5)
+        voltage_l3 = (block1.registers[4] << 16 | block1.registers[5]) / 1000.0
+        
+        # Current L1 (registers 6-7)
+        current_l1 = (block1.registers[6] << 16 | block1.registers[7]) / 1000.0  # assuming current in A with scaling
+        
+        # Current L2 (registers 8-9)
+        current_l2 = (block1.registers[8] << 16 | block1.registers[9]) / 1000.0
+        
+        # Current L3 (registers 10-11)
+        current_l3 = (block1.registers[10] << 16 | block1.registers[11]) / 1000.0
+        
+        # Update min, max, and sum for each value
+        voltage_l1_min = min(voltage_l1_min, voltage_l1)
+        voltage_l1_max = max(voltage_l1_max, voltage_l1)
+        voltage_l1_sum += voltage_l1
+        
+        voltage_l2_min = min(voltage_l2_min, voltage_l2)
+        voltage_l2_max = max(voltage_l2_max, voltage_l2)
+        voltage_l2_sum += voltage_l2
+        
+        voltage_l3_min = min(voltage_l3_min, voltage_l3)
+        voltage_l3_max = max(voltage_l3_max, voltage_l3)
+        voltage_l3_sum += voltage_l3
+        
+        current_l1_min = min(current_l1_min, current_l1)
+        current_l1_max = max(current_l1_max, current_l1)
+        current_l1_sum += current_l1
+        
+        current_l2_min = min(current_l2_min, current_l2)
+        current_l2_max = max(current_l2_max, current_l2)
+        current_l2_sum += current_l2
+        
+        current_l3_min = min(current_l3_min, current_l3)
+        current_l3_max = max(current_l3_max, current_l3)
+        current_l3_sum += current_l3
+        
+        sample_count += 1
+        
+    except Exception as e:
+        print(f"Error polling voltage and current: {e}")
+
+def reset_aggregation():
+    global voltage_l1_min, voltage_l1_max, voltage_l1_sum
+    global voltage_l2_min, voltage_l2_max, voltage_l2_sum
+    global voltage_l3_min, voltage_l3_max, voltage_l3_sum
+    global current_l1_min, current_l1_max, current_l1_sum
+    global current_l2_min, current_l2_max, current_l2_sum
+    global current_l3_min, current_l3_max, current_l3_sum
+    global sample_count
+    
+    voltage_l1_min = float('inf')
+    voltage_l1_max = float('-inf')
+    voltage_l1_sum = 0
+    voltage_l2_min = float('inf')
+    voltage_l2_max = float('-inf')
+    voltage_l2_sum = 0
+    voltage_l3_min = float('inf')
+    voltage_l3_max = float('-inf')
+    voltage_l3_sum = 0
+    current_l1_min = float('inf')
+    current_l1_max = float('-inf')
+    current_l1_sum = 0
+    current_l2_min = float('inf')
+    current_l2_max = float('-inf')
+    current_l2_sum = 0
+    current_l3_min = float('inf')
+    current_l3_max = float('-inf')
+    current_l3_sum = 0
+    sample_count = 0
+
+def publishPowerlog(client):
+    global routerSerial, sample_count
+    global voltage_l1_min, voltage_l1_max, voltage_l1_sum
+    global voltage_l2_min, voltage_l2_max, voltage_l2_sum
+    global voltage_l3_min, voltage_l3_max, voltage_l3_sum
+    global current_l1_min, current_l1_max, current_l1_sum
+    global current_l2_min, current_l2_max, current_l2_sum
+    global current_l3_min, current_l3_max, current_l3_sum
+    
+    try:
+        # Read block1 (voltage and current) for inclusion in the message
+        block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=1)
+        
+        # Read other registers needed for the power message
+        block2 = modbusclient.read_holding_registers(int(0x1014), count=10, slave=1) # power and reactive power and real power
+        block3 = modbusclient.read_holding_registers(int(0x1026), count=1, slave=1) # frequency
+        block4 = modbusclient.read_holding_registers(int(0x101c), count=2, slave=1) # consumed energy 
+        block5 = modbusclient.read_holding_registers(int(0x1020), count=2, slave=1) # delivered energy
+        block6 = modbusclient.read_holding_registers(int(0x1024), count=2, slave=1) # power factor and sector of power factor
+        block7 = modbusclient.read_holding_registers(int(0x1200), count=1, slave=1) # CT ratio
+        block8 = modbusclient.read_holding_registers(int(0x2213), count=1, slave=1) # serial number
+        
+        # Calculate averages if samples exist
+        if sample_count > 0:
+            voltage_l1_avg = voltage_l1_sum / sample_count
+            voltage_l2_avg = voltage_l2_sum / sample_count
+            voltage_l3_avg = voltage_l3_sum / sample_count
+            current_l1_avg = current_l1_sum / sample_count
+            current_l2_avg = current_l2_sum / sample_count
+            current_l3_avg = current_l3_sum / sample_count
+        else:
+            voltage_l1_avg = voltage_l2_avg = voltage_l3_avg = 0
+            current_l1_avg = current_l2_avg = current_l3_avg = 0
+        
+        # Combine all register blocks into a single variable for legacy compatibility
+        all_registers = block8.registers + block1.registers + block2.registers + block3.registers + block4.registers + \
+                        block5.registers + block6.registers + block7.registers
+        
+        # Convert to hex string
+        hexString = ''.join('{:04x}'.format(b) for b in all_registers)
+        
+        # Create hex string for aggregated values (scale by 1000 to preserve 3 decimal places)
+        # Format: v1min,v1max,v1avg,v2min,v2max,v2avg,v3min,v3max,v3avg,c1min,c1max,c1avg,c2min,c2max,c2avg,c3min,c3max,c3avg,samples
+        aggregated_values = [
+            int(voltage_l1_min * 1000) if voltage_l1_min != float('inf') else 0,
+            int(voltage_l1_max * 1000) if voltage_l1_max != float('-inf') else 0,
+            int(voltage_l1_avg * 1000),
+            int(voltage_l2_min * 1000) if voltage_l2_min != float('inf') else 0,
+            int(voltage_l2_max * 1000) if voltage_l2_max != float('-inf') else 0,
+            int(voltage_l2_avg * 1000),
+            int(voltage_l3_min * 1000) if voltage_l3_min != float('inf') else 0,
+            int(voltage_l3_max * 1000) if voltage_l3_max != float('-inf') else 0,
+            int(voltage_l3_avg * 1000),
+            int(current_l1_min * 1000) if current_l1_min != float('inf') else 0,
+            int(current_l1_max * 1000) if current_l1_max != float('-inf') else 0,
+            int(current_l1_avg * 1000),
+            int(current_l2_min * 1000) if current_l2_min != float('inf') else 0,
+            int(current_l2_max * 1000) if current_l2_max != float('-inf') else 0,
+            int(current_l2_avg * 1000),
+            int(current_l3_min * 1000) if current_l3_min != float('inf') else 0,
+            int(current_l3_max * 1000) if current_l3_max != float('-inf') else 0,
+            int(current_l3_avg * 1000),
+            sample_count
+        ]
+        aggregatedHexString = ''.join('{:08x}'.format(v & 0xffffffff) for v in aggregated_values)
+        
+        # Format timestamp as 16-character hex string (removing '0x' prefix)
+        timestamp_hex = '{:016x}'.format(int(time.time()))
+        
+        # Combine all data into a single hex string
+        # Format: timestamp + register data + aggregated data
+        message = timestamp_hex + hexString + aggregatedHexString
+        
+        print(message)
+        result = client.publish(topicPower, message)
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicPower}')
+            
+        # Reset aggregation after sending
+        reset_aggregation()
+        
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
 
@@ -175,9 +454,24 @@ def publishModemlog(client):
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
 
+def voltage_current_polling():
+    global polling_active
+    while polling_active:
+        try:
+            poll_voltage_and_current()
+            time.sleep(0.2)  # Poll at 2Hz (twice per second)
+        except Exception as e:
+            print(f"Error in polling thread: {e}")
+            time.sleep(1)  # Wait a bit longer if there's an error
 
 def powerLoop():
+    global polling_active
     modbusConnect(modbusclient)
+    
+    # Start the polling thread
+    polling_thread = threading.Thread(target=voltage_current_polling, daemon=True)
+    polling_thread.start()
+    
     while True:
         try:
             publishPowerlog(client)
@@ -192,7 +486,7 @@ def modemLoop():
             publishModemlog(client)
         except Exception:
             modbusTcpConnect(tcpClient)
-        time.sleep(60)
+        time.sleep(300)
 # MQTT
 
 BROKER = credentials["broker"] 
@@ -223,11 +517,25 @@ logMQTT(client,topicLog, "Node is connected to broker!")
 
 if __name__ == "__main__":
     
+    # First connect to Modbus
+    modbusConnect(modbusclient)
+    
+    # Call setup functions once with slave ID 1
+    slaveid = 1
+    if setSerialNumber(slaveid):
+        logMQTT(client, topicLog, f"Serial number set for slave {slaveid}")
+    else:
+        logMQTT(client, topicLog, f"Failed to set serial number for slave {slaveid}")
+        
+    if insertStandardSettings(slaveid):
+        logMQTT(client, topicLog, f"Standard settings applied for slave {slaveid}")
+    else:
+        logMQTT(client, topicLog, f"Failed to apply standard settings for slave {slaveid}")
+    time.sleep(10) #wait for the modem to reboot
     thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
     thread_powerLoop = threading.Thread(target=powerLoop, daemon=True)
     
     thread_modemLoop.start()
-    time.sleep(5)
     thread_powerLoop.start()
     
 
