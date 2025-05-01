@@ -59,7 +59,7 @@ def modbusConnect(modbusclient):
 
 
 def modbusTcpConnect(tcpClient):
-    global routerSerial
+    global routerSerial, topicReset, topicConfig, topicLog
     print("Attempting to connect to Modbus TCP server...")
     while not tcpClient.connect():
         logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
@@ -67,6 +67,13 @@ def modbusTcpConnect(tcpClient):
     serialData = tcpClient.read_holding_registers(39, count=16)
     serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
     routerSerial = serialByteData.decode('ascii').split('\00')[0]
+    
+    # Now that we have the router serial, update the topic definitions
+    topicReset = f"ET/powerlogger/{routerSerial}/reset"
+    topicConfig = f"ET/powerlogger/{routerSerial}/config"
+    topicLog = f"ET/modemlogger/{routerSerial}/log"
+    
+    # Subscribe to topics with proper serial number
     client.subscribe(topicReset)
     client.subscribe(topicConfig)
     logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
@@ -169,8 +176,12 @@ def insertStandardSettings(slaveid):
         return False
 
 
-def logMQTT(client, topicLog, logMessage):
+def logMQTT(client, topic, logMessage):
     global lastLogMessage
+    if topic is None:
+        print(str(time.time()) + "\t->\t" + logMessage + " (Not sent to broker - no topic)")
+        return
+        
     if not logMessage == lastLogMessage:
         message = {
             "timestamp": time.time(),
@@ -178,15 +189,21 @@ def logMQTT(client, topicLog, logMessage):
         }
         print(str(time.time()) + "\t->\t" + logMessage)
         lastLogMessage = logMessage
-        result = client.publish(topicLog, json.dumps(message))
-        status = result.rc
-        if status != 0:
-            print(f'Failed to send log message to topic {topicLog}')
+        try:
+            result = client.publish(topic, json.dumps(message))
+            status = result.rc
+            if status != 0:
+                print(f'Failed to send log message to topic {topic}, status code: {status}')
+        except Exception as e:
+            print(f'Error publishing log message: {str(e)}')
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
-        client.subscribe(topicReset)
-        client.subscribe(topicConfig)
+        # Only subscribe if topics are properly defined
+        if topicReset and topicConfig:
+            client.subscribe(topicReset)
+            client.subscribe(topicConfig)
+            print(f"Subscribed to {topicReset} and {topicConfig}")
 
 def on_disconnect(client, userdata, rc):
     print(f"MQTT disconnected with result code: {rc}")
@@ -225,25 +242,32 @@ sendInterval = 10
 
 def on_message(client, userdata, msg):
     global sendInterval
+    print(f"Message received on topic: {msg.topic}")
+    
     if msg.topic == topicReset:
-        if msg.payload.decode() == 'current':
-            print("reset current")
+        payload = msg.payload.decode()
+        print(f"Reset action requested: {payload}")
+        if payload == 'current':
             resetCurrent()
-        elif msg.payload.decode() == 'voltage':
-            print("reset voltage")
+        elif payload == 'voltage':
             resetVoltage()
-        elif msg.payload.decode() == 'modem':
+        elif payload == 'modem':
             rebootModem()
         else:
-            print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
-    if msg.topic == topicConfig:
+            print(f'Unknown reset command: {payload}')
+            
+    elif msg.topic == topicConfig:
         try:
-            config = json.loads(msg.payload.decode())
+            payload = msg.payload.decode()
+            print(f"Config update received: {payload}")
+            config = json.loads(payload)
             sendInterval = config["sendInterval"]
-            logMQTT(client, topicLog, "Received config message - new config is applied")
+            logMQTT(client, topicLog, f"Config updated - sendInterval set to {sendInterval}")
         except Exception as error:
-            print("An error occurred:", error)  # An error occurred: name 'x' is not defined
-            logMQTT(client, topicLog, "Received invalid config message")
+            print(f"Error processing config message: {error}")
+            logMQTT(client, topicLog, f"Invalid config message: {str(error)}")
+    else:
+        print(f"Received message on unexpected topic: {msg.topic}")
 
 def poll_voltage_and_current(slaveid=1):
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
@@ -485,13 +509,21 @@ def powerLoop():
         time.sleep(sendInterval)
 
 def modemLoop():
+    global topicLog
     modbusTcpConnect(tcpClient)
+    
+    # Now that we have the proper topicLog, set the last will message
+    client.will_set(topicLog, json.dumps({"timestamp": time.time(), "log": "Disconnected"}), retain=True)
+    logMQTT(client, topicLog, "Node is connected to broker with proper topics!")
+    
     while True:
         try:
             publishModemlog(client)
-        except Exception:
+        except Exception as e:
+            logMQTT(client, topicLog, f"Modem loop error: {str(e)}")
             modbusTcpConnect(tcpClient)
         time.sleep(300)
+
 # MQTT
 
 BROKER = credentials["broker"] 
@@ -500,26 +532,23 @@ USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
 topicPower = "ET/powerlogger/data"
 topicModem = "ET/modemlogger/data"
-topicReset = "ET/powerlogger/"+routerSerial+"/reset"
-topicConfig = "ET/powerlogger/"+routerSerial+"/config"
-topicLog = "ET/modemlogger/"+routerSerial+"/log"
-msgCount = 0
+# These topics will be properly defined after getting routerSerial
+topicReset = None
+topicConfig = None
+topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
-
-
-flag_connected = True
+flag_connected = False  # Initially not connected
 lastLogMessage = ""
 client_id = f"client-{uuid.uuid4()}"
 client = mqtt_client.Client(client_id=client_id, clean_session=False)
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
 client.on_message = on_message
-client.on_disconnect = on_disconnect  # Moved this line to the connect_mqtt function
-client.will_set(topicLog, "Disconnected", retain=True)  # Optional: Set a last will message
-client.connect(BROKER, PORT, keepalive=10)  # Increased the keepalive interval
+client.on_disconnect = on_disconnect
+
+# We'll set the will after connecting to Modbus and getting the proper topicLog
+client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
 client.loop_start()
-time.sleep(2)
-logMQTT(client,topicLog, "Node is connected to broker!")
 
 if __name__ == "__main__":
     
