@@ -29,6 +29,10 @@ tcpClient = ModbusTcpClient(
 )
 
 routerSerial = "0000000000000000"
+# These topics will be properly defined after getting routerSerial
+topicReset = None
+topicConfig = None
+topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
 # Variables for voltage and current aggregation
 voltage_l1_min = float('inf')
@@ -52,6 +56,30 @@ current_l3_sum = 0
 sample_count = 0
 polling_active = True
 
+def getRouterSerial():
+    global routerSerial, topicReset, topicConfig, topicLog, client
+    try:
+        print("Attempting to connect to Modbus TCP server to get router serial...")
+        if tcpClient.connect():
+            serialData = tcpClient.read_holding_registers(39, count=16)
+            serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
+            routerSerial = serialByteData.decode('ascii').split('\00')[0]
+            
+            # Now that we have the router serial, update the topic definitions
+            topicReset = f"ET/powerlogger/{routerSerial}/reset"
+            topicConfig = f"ET/powerlogger/{routerSerial}/config"
+            topicLog = f"ET/modemlogger/{routerSerial}/log"
+            
+            # Update the will message with the proper topic
+            client.will_set(topicLog, json.dumps({"timestamp": time.time(), "routerSerial": routerSerial, "log": "Disconnected"}), retain=True)
+            
+            # Close connection temporarily
+            tcpClient.close()
+            return True
+    except Exception as e:
+        print(f"Failed to get router serial: {e}")
+        return False
+
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
         logMQTT(client, topicLog, "Modbus RTU initialisation failed")
@@ -64,14 +92,17 @@ def modbusTcpConnect(tcpClient):
     while not tcpClient.connect():
         logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
         time.sleep(1)  # Wait for 2 seconds before retrying
-    serialData = tcpClient.read_holding_registers(39, count=16)
-    serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
-    routerSerial = serialByteData.decode('ascii').split('\00')[0]
     
-    # Now that we have the router serial, update the topic definitions
-    topicReset = f"ET/powerlogger/{routerSerial}/reset"
-    topicConfig = f"ET/powerlogger/{routerSerial}/config"
-    topicLog = f"ET/modemlogger/{routerSerial}/log"
+    # Only update the router serial if it hasn't been fetched already
+    if routerSerial == "0000000000000000":
+        serialData = tcpClient.read_holding_registers(39, count=16)
+        serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
+        routerSerial = serialByteData.decode('ascii').split('\00')[0]
+        
+        # Now that we have the router serial, update the topic definitions
+        topicReset = f"ET/powerlogger/{routerSerial}/reset"
+        topicConfig = f"ET/powerlogger/{routerSerial}/config"
+        topicLog = f"ET/modemlogger/{routerSerial}/log"
     
     # Subscribe to topics with proper serial number
     client.subscribe(topicReset)
@@ -185,7 +216,7 @@ def logMQTT(client, topic, logMessage):
     if not logMessage == lastLogMessage:
         message = {
             "timestamp": time.time(),
-            "routerSerial": routerSerial,
+            "routerSerial": routerSerial if routerSerial != "0000000000000000" else "unknown",
             "log": logMessage,
         }
         print(str(time.time()) + "\t->\t" + logMessage)
@@ -513,8 +544,7 @@ def modemLoop():
     global topicLog
     modbusTcpConnect(tcpClient)
     
-    # Now that we have the proper topicLog, set the last will message
-    client.will_set(topicLog, json.dumps({"timestamp": time.time(), "log": "Disconnected"}), retain=True)
+    # Log a connection message
     logMQTT(client, topicLog, "Node is connected to broker with proper topics!")
     
     while True:
@@ -527,6 +557,12 @@ def modemLoop():
 
 # MQTT
 
+# These values get set up after all functions are defined
+flag_connected = False  # Initially not connected
+lastLogMessage = ""
+client_id = f"client-{uuid.uuid4()}"
+client = None  # Will be initialized after function definitions
+
 BROKER = credentials["broker"] 
 PORT = credentials["port"]
 USERNAME = credentials["username"]
@@ -538,22 +574,26 @@ topicReset = None
 topicConfig = None
 topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
-flag_connected = False  # Initially not connected
-lastLogMessage = ""
-client_id = f"client-{uuid.uuid4()}"
+# Initialize MQTT client after all functions are defined
 client = mqtt_client.Client(client_id=client_id, clean_session=False)
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
 client.on_message = on_message
 client.on_disconnect = on_disconnect
 
-# We'll set the will after connecting to Modbus and getting the proper topicLog
+# Connect to MQTT broker
 client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
 client.loop_start()
 
 if __name__ == "__main__":
     
-    # First connect to Modbus
+    # First try to get the router serial
+    if getRouterSerial():
+        print(f"Router serial obtained: {routerSerial}")
+    else:
+        print("Could not get router serial at startup, will retry later")
+    
+    # Now connect to Modbus
     modbusConnect(modbusclient)
     
     # Call setup functions once with slave ID 1
