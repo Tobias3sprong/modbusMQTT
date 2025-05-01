@@ -177,7 +177,7 @@ def insertStandardSettings(slaveid):
 
 
 def logMQTT(client, topic, logMessage):
-    global lastLogMessage
+    global lastLogMessage, routerSerial
     if topic is None:
         print(str(time.time()) + "\t->\t" + logMessage + " (Not sent to broker - no topic)")
         return
@@ -185,6 +185,7 @@ def logMQTT(client, topic, logMessage):
     if not logMessage == lastLogMessage:
         message = {
             "timestamp": time.time(),
+            "routerSerial": routerSerial,
             "log": logMessage,
         }
         print(str(time.time()) + "\t->\t" + logMessage)
