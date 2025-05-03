@@ -168,6 +168,30 @@ def setSerialNumber(slaveid):
             return False
             
         print(f"Successfully updated register 0x2213 to {new_value} ({hex(new_value)})")
+        
+        read_result = modbusclient.read_holding_registers(address=0x2200, count=24, slave=slaveid)
+        if read_result.isError():
+            print(f"Error reading register group: {read_result}")
+            return False
+        
+        # Update register
+        values = read_result.registers.copy()
+        values[10] = 0
+        
+        # Write and save changes
+        if not send_master_unlock(slaveid) or \
+           modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
+           not save_to_eeprom(slaveid):
+            print("Failed to write or save changes")
+            return False
+            
+        # Verify change
+        verify = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
+        if verify.isError() or verify.registers[0] != new_value:
+            print("Verification failed")
+            return False
+            
+        print(f"Successfully updated register 0x2213 to {new_value} ({hex(new_value)})")
         return True
         
     except Exception as e:
