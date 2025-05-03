@@ -138,8 +138,8 @@ def setSerialNumber(slaveid):
         print(f"Register 0x2213 value: {hex(current_value)}")
         
         # Only modify if value is 0
-        if current_value != 0:
-            print("Register is not 0. No modification needed.")
+        if current_value != 1234:
+            print("Register is not 1234. No modification needed.")
             return True
         
         # Read all registers in the group
