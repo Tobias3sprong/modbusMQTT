@@ -151,7 +151,7 @@ def setSerialNumber(slaveid):
         # Update register
         values = read_result.registers.copy()
         new_value = random.randint(1, 9999)
-        values[10] = 0
+        values[10] = 1
         values[19] = new_value  # Register 0x2213
         
         # Write and save changes
