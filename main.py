@@ -910,12 +910,12 @@ def rmu_check_serialnumber(slaveid=49):
 if __name__ == "__main__":
     
     # First try to get the router serial
-    '''
+
     if getRouterSerial():
         print(f"Router serial obtained: {routerSerial}")
     else:
         print("Could not get router serial at startup, will retry later")
-    '''
+
     # Now connect to Modbus
     modbusConnect(modbusclient)
 
@@ -969,10 +969,10 @@ if __name__ == "__main__":
         slaveid = 49
         print(f"RMU connected")
 
-    #thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
+    thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
     thread_powerLoop = threading.Thread(target=powerLoop, daemon=True)
     
-    #thread_modemLoop.start()
+    thread_modemLoop.start()
     thread_powerLoop.start()
     
 
