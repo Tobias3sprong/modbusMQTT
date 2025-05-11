@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyHS0', # for production use /dev/ttyHS0
+    port='/dev/tty.usbserial-FTWJW5L4', # for production use /dev/ttyHS0
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -109,15 +109,16 @@ def modbusTcpConnect(tcpClient):
     client.subscribe(topicConfig)
     logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
 
-def send_master_unlock(slaveid):
+#functions for emdx
+def emdx_send_master_unlock(slaveid):
     result = modbusclient.write_registers(address=0x2700, values=[0x5AA5], slave=slaveid)
     if result.isError():
         print(f"Error sending Master Unlock Key: {result}")
         return False
     return True
 
-def save_to_eeprom(slaveid):
-    if not send_master_unlock(slaveid):
+def emdx_save_to_eeprom(slaveid):
+    if not emdx_send_master_unlock(slaveid):
         return False
     
     result = modbusclient.write_registers(address=0x2600, values=[0x000A], slave=slaveid)
@@ -126,7 +127,7 @@ def save_to_eeprom(slaveid):
         return False
     return True
 
-def setSerialNumber(slaveid):
+def emdx_setSerialNumber(slaveid):
     try:
         # Check current value
         check_result = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
@@ -155,33 +156,9 @@ def setSerialNumber(slaveid):
         values[19] = new_value  # Register 0x2213
         
         # Write and save changes
-        if not send_master_unlock(slaveid) or \
+        if not emdx_send_master_unlock(slaveid) or \
            modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
-           not save_to_eeprom(slaveid):
-            print("Failed to write or save changes")
-            return False
-            
-        # Verify change
-        verify = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
-        if verify.isError() or verify.registers[0] != new_value:
-            print("Verification failed")
-            return False
-            
-        print(f"Successfully updated register 0x2213 to {new_value} ({hex(new_value)})")
-        
-        read_result = modbusclient.read_holding_registers(address=0x2200, count=24, slave=slaveid)
-        if read_result.isError():
-            print(f"Error reading register group: {read_result}")
-            return False
-        
-        # Update register
-        values = read_result.registers.copy()
-        values[10] = 0
-        
-        # Write and save changes
-        if not send_master_unlock(slaveid) or \
-           modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
-           not save_to_eeprom(slaveid):
+           not emdx_save_to_eeprom(slaveid):
             print("Failed to write or save changes")
             return False
             
@@ -198,7 +175,7 @@ def setSerialNumber(slaveid):
         print(f"Error: {e}")
         return False
     
-def insertStandardSettings(slaveid):
+def emdx_insertStandardSettings(slaveid):
     try:
         # Read current values
         read_result = modbusclient.read_holding_registers(address=0x2000, count=16, slave=slaveid)
@@ -218,9 +195,9 @@ def insertStandardSettings(slaveid):
         values[15] = 0
 
         # Write and save changes
-        if not send_master_unlock(slaveid) or \
+        if not emdx_send_master_unlock(slaveid) or \
            modbusclient.write_registers(address=0x2000, values=values, slave=slaveid).isError() or \
-           not save_to_eeprom(slaveid):
+           not emdx_save_to_eeprom(slaveid):
             print("Failed to write or save changes")
             return False
             
@@ -230,8 +207,9 @@ def insertStandardSettings(slaveid):
     except Exception as e:
         print(f"Error: {e}")
         return False
+#end of emdx functions
 
-
+#mqtt functions
 def logMQTT(client, topic, logMessage):
     global lastLogMessage, routerSerial
     if topic is None:
@@ -270,23 +248,9 @@ def on_disconnect(client, userdata, rc):
             client.reconnect()
         except Exception as e:
             print(f"Reconnect failed: {e}")
+#end of mqtt functions
 
-def resetVoltage():
-    try:
-        modbusclient.write_registers(int(0x2700), [0x5AA5], slave=1)
-        modbusclient.write_registers(int(0x2400), [0x14], slave=1)
-    except Exception as e:
-        logMQTT(client, topicLog, f"Resetting min/max voltage has failed: {e}")
-    else:
-        logMQTT(client, topicLog, "Min/max voltage has been reset")
-def resetCurrent():
-    try:
-        modbusclient.write_registers(int(0x2700), [0x5AA5], slave=1)
-        modbusclient.write_registers(int(0x2400), [0xA], slave=1)
-    except Exception as e:
-        logMQTT(client, topicLog, f"Resetting min/max current has failed: {e}")
-    else:
-        logMQTT(client, topicLog, "Min/max current has been reset")
+#functions for modem
 def rebootModem():
     try:
         tcpClient.write_register(206, 1)
@@ -304,11 +268,7 @@ def on_message(client, userdata, msg):
     if msg.topic == topicReset:
         payload = msg.payload.decode()
         print(f"Reset action requested: {payload}")
-        if payload == 'current':
-            resetCurrent()
-        elif payload == 'voltage':
-            resetVoltage()
-        elif payload == 'modem':
+        if payload == 'modem':
             rebootModem()
         else:
             print(f'Unknown reset command: {payload}')
@@ -336,31 +296,53 @@ def poll_voltage_and_current(slaveid=1):
     global sample_count
     
     try:
-        # Read voltage and current registers (block1)
-        block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+        # Initialize variables for readings
+        voltage_l1 = voltage_l2 = voltage_l3 = 0
+        current_l1 = current_l2 = current_l3 = 0
         
-        if block1.isError():
-            print("Error reading voltage and current registers")
+        # Read voltage and current registers based on connected device type
+        if emdx_connected:
+            # For EMDX, use the provided slaveid (typically 1)
+            block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+            if block1.isError():
+                print("Error reading EMDX voltage and current registers")
+                return
+                
+            # Extract values with EMDX scaling
+            voltage_l1 = (block1.registers[0] << 16 | block1.registers[1]) / 1000.0  
+            voltage_l2 = (block1.registers[2] << 16 | block1.registers[3]) / 1000.0
+            voltage_l3 = (block1.registers[4] << 16 | block1.registers[5]) / 1000.0
+            current_l1 = (block1.registers[6] << 16 | block1.registers[7]) / 1000.0  
+            current_l2 = (block1.registers[8] << 16 | block1.registers[9]) / 1000.0
+            current_l3 = (block1.registers[10] << 16 | block1.registers[11]) / 1000.0
+            
+        elif rmu_connected:
+            # For RMU/UMG, always use slave ID 49 - override the parameter
+            rmu_slaveid = 49
+            
+            # Read voltage registers - first block
+            voltage_block = modbusclient.read_holding_registers(200, count=3, slave=rmu_slaveid)
+            if voltage_block.isError():
+                print("Error reading RMU voltage registers")
+                return
+                
+            # Read current registers - separate block
+            current_block = modbusclient.read_holding_registers(19012, count=3, slave=rmu_slaveid)
+            if current_block.isError():
+                print("Error reading RMU current registers")
+                return
+                
+            # Extract values with RMU scaling
+            voltage_l1 = voltage_block.registers[0] / 10.0
+            voltage_l2 = voltage_block.registers[1] / 10.0
+            voltage_l3 = voltage_block.registers[2] / 10.0
+            
+            # Extract current values
+            current_l1 = current_block.registers[0] / 1000.0
+            current_l2 = current_block.registers[1] / 1000.0
+            current_l3 = current_block.registers[2] / 1000.0
+        else:
             return
-        
-        # Extract values (assuming registers contain raw values that might need scaling)
-        # Voltage L1 (registers 0-1)
-        voltage_l1 = (block1.registers[0] << 16 | block1.registers[1]) / 1000.0  # assuming voltage in V with scaling
-        
-        # Voltage L2 (registers 2-3)
-        voltage_l2 = (block1.registers[2] << 16 | block1.registers[3]) / 1000.0
-        
-        # Voltage L3 (registers 4-5)
-        voltage_l3 = (block1.registers[4] << 16 | block1.registers[5]) / 1000.0
-        
-        # Current L1 (registers 6-7)
-        current_l1 = (block1.registers[6] << 16 | block1.registers[7]) / 1000.0  # assuming current in A with scaling
-        
-        # Current L2 (registers 8-9)
-        current_l2 = (block1.registers[8] << 16 | block1.registers[9]) / 1000.0
-        
-        # Current L3 (registers 10-11)
-        current_l3 = (block1.registers[10] << 16 | block1.registers[11]) / 1000.0
         
         # Update min, max, and sum for each value
         voltage_l1_min = min(voltage_l1_min, voltage_l1)
@@ -423,8 +405,7 @@ def reset_aggregation():
 
 def publishPowerlog(client):
     """
-    Publish power data in binary format instead of hex strings.
-    All the same data is included, just more efficiently encoded.
+    Publish power data in a standardized binary format compatible with the JavaScript parser.
     """
     global routerSerial, sample_count
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
@@ -435,19 +416,229 @@ def publishPowerlog(client):
     global current_l3_min, current_l3_max, current_l3_sum
     
     try:
-        # Read block1 (voltage and current) for inclusion in the message
-        block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=1)
+        # Device-specific values that will be standardized
+        device_serial = 0
+        voltage_l1 = voltage_l2 = voltage_l3 = 0
+        current_l1 = current_l2 = current_l3 = current_n = 0
+        active_power = reactive_power = apparent_power = 0
+        sign_active = sign_reactive = 0
+        chained_voltage_l1l2 = 0
+        frequency = 0
+        consumed_energy = delivered_energy = 0
+        power_factor = sector_power_factor = 0
+        ct_ratio = 0
         
-        # Read other registers needed for the power message
-        block2 = modbusclient.read_holding_registers(int(0x1014), count=10, slave=1) # power and reactive power and real power
-        block3 = modbusclient.read_holding_registers(int(0x1026), count=1, slave=1) # frequency
-        block4 = modbusclient.read_holding_registers(int(0x101c), count=2, slave=1) # consumed energy 
-        block5 = modbusclient.read_holding_registers(int(0x1020), count=2, slave=1) # delivered energy
-        block6 = modbusclient.read_holding_registers(int(0x1024), count=2, slave=1) # power factor and sector of power factor
-        block7 = modbusclient.read_holding_registers(int(0x1200), count=1, slave=1) # CT ratio
-        block8 = modbusclient.read_holding_registers(int(0x2213), count=1, slave=1) # serial number
-        
-        # Calculate averages if samples exist
+        # Read device-specific registers and convert to standardized format
+        if emdx_connected:
+            slaveid = 1
+            
+            # Read all necessary register blocks for EMDX
+            block8 = modbusclient.read_holding_registers(int(0x2213), count=1, slave=slaveid)  # serial number
+            if block8.isError():
+                print("Error reading EMDX serial number register")
+                return
+            
+            # Use only one register and pad with zeros for the high word
+            # This will create a 32-bit value where the low 16 bits are from the register
+            # and the high 16 bits are all zeros (0)
+            device_serial = block8.registers[0]  # Zeros are implicitly added to the high word
+            
+            # Voltages (L1, L2, L3)
+            block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+            if block1.isError():
+                print("Error reading EMDX voltage and current registers")
+                return
+                
+            voltage_l1 = (block1.registers[0] << 16 | block1.registers[1]) / 1000.0
+            voltage_l2 = (block1.registers[2] << 16 | block1.registers[3]) / 1000.0
+            voltage_l3 = (block1.registers[4] << 16 | block1.registers[5]) / 1000.0
+            
+            # Currents (L1, L2, L3, N)
+            current_l1 = (block1.registers[6] << 16 | block1.registers[7]) / 1000.0
+            current_l2 = (block1.registers[8] << 16 | block1.registers[9]) / 1000.0
+            current_l3 = (block1.registers[10] << 16 | block1.registers[11]) / 1000.0
+            current_n = (block1.registers[12] << 16 | block1.registers[13]) / 1000.0
+            
+            # Power values
+            block2 = modbusclient.read_holding_registers(int(0x1014), count=10, slave=slaveid)
+            if block2.isError():
+                print("Error reading EMDX power registers")
+                return
+            
+            active_power = (block2.registers[0] << 16 | block2.registers[1]) / 1000.0
+            reactive_power = (block2.registers[2] << 16 | block2.registers[3]) / 1000.0
+            apparent_power = (block2.registers[4] << 16 | block2.registers[5]) / 1000.0
+            
+            # Signs of power
+            sign_active = block2.registers[6] 
+            sign_reactive = block2.registers[7]
+            
+            # Chained voltage
+            chained_voltage_l1l2 = (block2.registers[8] << 16 | block2.registers[9]) / 1000.0
+            
+            # Frequency
+            block3 = modbusclient.read_holding_registers(int(0x1026), count=1, slave=slaveid)
+            if block3.isError():
+                print("Error reading EMDX frequency register")
+                return
+            
+            frequency = block3.registers[0] / 10.0
+            
+            # Energy
+            block4 = modbusclient.read_holding_registers(int(0x101c), count=2, slave=slaveid)
+            if block4.isError():
+                print("Error reading EMDX consumed energy registers")
+                return
+            
+            block5 = modbusclient.read_holding_registers(int(0x1020), count=2, slave=slaveid)
+            if block5.isError():
+                print("Error reading EMDX delivered energy registers")
+                return
+            
+            # Power factor
+            block6 = modbusclient.read_holding_registers(int(0x1024), count=2, slave=slaveid)
+            if block6.isError():
+                print("Error reading EMDX power factor registers")
+                return
+            
+            # CT ratio
+            block7 = modbusclient.read_holding_registers(int(0x1200), count=1, slave=slaveid)
+            if block7.isError():
+                print("Error reading EMDX CT ratio register")
+                return
+            
+            power_factor = block6.registers[0] / 1000.0
+            sector_power_factor = block6.registers[1]
+            
+            ct_ratio = block7.registers[0]
+            
+            consumed_energy = (block4.registers[0] << 16 | block4.registers[1]) / 1000.0
+            delivered_energy = (block5.registers[0] << 16 | block5.registers[1]) / 1000.0
+            
+        elif rmu_connected:
+            # For RMU devices, always use slave ID 49
+            slaveid = 49
+            
+            try:
+                # Serial number
+                block8 = modbusclient.read_holding_registers(911, count=2, slave=slaveid)
+                if block8.isError():
+                    print("Error reading RMU serial number")
+                    return
+                
+                # Voltage registers
+                block1_voltage = modbusclient.read_holding_registers(200, count=3, slave=slaveid)
+                if block1_voltage.isError():
+                    print("Error reading RMU voltage registers")
+                    return
+                
+                # Current registers
+                block1_current = modbusclient.read_holding_registers(19012, count=3, slave=slaveid)
+                if block1_current.isError():
+                    print("Error reading RMU current registers")
+                    return
+                
+                # Neutral current (might not be available, using 0)
+                current_n = 0
+                
+                # Power values
+                block2_power = modbusclient.read_holding_registers(19026, count=3, slave=slaveid)  # Active power
+                if block2_power.isError():
+                    print("Error reading RMU power registers")
+                    return
+                
+                block2_reactive = modbusclient.read_holding_registers(19032, count=3, slave=slaveid)  # Reactive power
+                if block2_reactive.isError():
+                    print("Error reading RMU reactive power registers")
+                    return
+                
+                block2_apparent = modbusclient.read_holding_registers(19038, count=3, slave=slaveid)  # Apparent power
+                if block2_apparent.isError():
+                    print("Error reading RMU apparent power registers")
+                    return
+                
+                # Signs (may need to extract from power values if not directly available)
+                sign_active = 0
+                sign_reactive = 0
+                
+                # No chained voltage value in RMU
+                chained_voltage_l1l2 = 0
+                
+                # Frequency register
+                block3 = modbusclient.read_holding_registers(19050, count=2, slave=slaveid)
+                if block3.isError():
+                    print("Error reading RMU frequency register")
+                    return
+                
+                # Energy registers
+                block4 = modbusclient.read_holding_registers(19068, count=2, slave=slaveid)
+                if block4.isError():
+                    print("Error reading RMU consumed energy registers")
+                    return
+                
+                block5 = modbusclient.read_holding_registers(19076, count=2, slave=slaveid)
+                if block5.isError():
+                    print("Error reading RMU delivered energy registers")
+                    return
+                
+                # Power factor registers
+                block6 = modbusclient.read_holding_registers(19084, count=2, slave=slaveid)
+                if block6.isError():
+                    print("Error reading RMU power factor registers")
+                    return
+                
+                # CT ratio registers
+                block7 = modbusclient.read_holding_registers(600, count=1, slave=slaveid)
+                if block7.isError():
+                    print("Error reading RMU CT ratio registers")
+                    return
+                
+                # Extract values according to RMU format
+                device_serial = (block8.registers[0] << 16) | block8.registers[1]
+                
+                # Voltages
+                voltage_l1 = block1_voltage.registers[0] / 10.0
+                voltage_l2 = block1_voltage.registers[1] / 10.0
+                voltage_l3 = block1_voltage.registers[2] / 10.0
+                
+                # Currents
+                current_l1 = block1_current.registers[0] / 1000.0
+                current_l2 = block1_current.registers[1] / 1000.0
+                current_l3 = block1_current.registers[2] / 1000.0
+                
+                # Power values (using first register of each group for 3-phase value)
+                active_power = block2_power.registers[0] / 1000.0
+                reactive_power = block2_reactive.registers[0] / 1000.0
+                apparent_power = block2_apparent.registers[0] / 1000.0
+                
+                # Frequency
+                if block3.isError():
+                    print("Error reading RMU frequency register")
+                    return
+                
+                # Handle frequency as a 32-bit IEEE-754 floating point value
+                # The frequency is stored as a 32-bit IEEE-754 float spanning two registers
+                raw_freq_bytes = struct.pack('>HH', block3.registers[0], block3.registers[1])
+                frequency = struct.unpack('>f', raw_freq_bytes)[0]
+                
+                # Energy values
+                consumed_energy = (block4.registers[0] << 16 | block4.registers[1]) / 1000.0
+                delivered_energy = (block5.registers[0] << 16 | block5.registers[1]) / 1000.0
+                
+                # Power factor
+                power_factor = block6.registers[0] / 1000.0
+                sector_power_factor = 0  # May not be available
+                
+                # CT ratio
+                ct_ratio = block7.registers[0]
+                
+            except Exception as e:
+                print(f"Error processing RMU registers: {e}")
+                return
+        else:
+            return
+            
+        # Calculate aggregated values
         if sample_count > 0:
             voltage_l1_avg = voltage_l1_sum / sample_count
             voltage_l2_avg = voltage_l2_sum / sample_count
@@ -459,22 +650,95 @@ def publishPowerlog(client):
             voltage_l1_avg = voltage_l2_avg = voltage_l3_avg = 0
             current_l1_avg = current_l2_avg = current_l3_avg = 0
         
-        # Combine all register blocks into a single variable for legacy compatibility
-        all_registers = block8.registers + block1.registers + block2.registers + block3.registers + block4.registers + \
-                        block5.registers + block6.registers + block7.registers
-        
-        # Initialize binary data
+        # Initialize binary data buffer
         binary_data = bytearray()
         
         # Add timestamp (4 bytes)
         timestamp = int(time.time())
         binary_data.extend(struct.pack('>I', timestamp))
         
-        # Add register data
-        for reg in all_registers:
-            binary_data.extend(struct.pack('>H', reg))
+        # Add registers in exact order expected by JavaScript parser
+        registers = [
+            # Block 8 - Serial number (2 registers)
+            device_serial >> 16,         # High word
+            device_serial & 0xFFFF,      # Low word
+            
+            # Block 1 - Voltage and current (14 registers)
+            # Phase 1 voltage (2 registers)
+            int(voltage_l1 * 1000) >> 16,
+            int(voltage_l1 * 1000) & 0xFFFF,
+            
+            # Phase 2 voltage (2 registers)
+            int(voltage_l2 * 1000) >> 16,
+            int(voltage_l2 * 1000) & 0xFFFF,
+            
+            # Phase 3 voltage (2 registers)
+            int(voltage_l3 * 1000) >> 16,
+            int(voltage_l3 * 1000) & 0xFFFF,
+            
+            # Phase 1 current (2 registers)
+            int(current_l1 * 1000) >> 16,
+            int(current_l1 * 1000) & 0xFFFF,
+            
+            # Phase 2 current (2 registers)
+            int(current_l2 * 1000) >> 16,
+            int(current_l2 * 1000) & 0xFFFF,
+            
+            # Phase 3 current (2 registers)
+            int(current_l3 * 1000) >> 16,
+            int(current_l3 * 1000) & 0xFFFF,
+            
+            # Neutral current (2 registers)
+            int(current_n * 1000) >> 16,
+            int(current_n * 1000) & 0xFFFF,
+            
+            # Block 2 - Power values (10 registers)
+            # 3-phase active power (2 registers)
+            int(active_power * 100) >> 16,
+            int(active_power * 100) & 0xFFFF,
+            
+            # 3-phase reactive power (2 registers)
+            int(reactive_power * 100) >> 16,
+            int(reactive_power * 100) & 0xFFFF,
+            
+            # 3-phase apparent power (2 registers)
+            int(apparent_power * 100) >> 16,
+            int(apparent_power * 100) & 0xFFFF,
+            
+            # Sign of active power (1 register)
+            sign_active,
+            
+            # Sign of reactive power (1 register)
+            sign_reactive,
+            
+            # Chained voltage L1-L2 (2 registers)
+            int(chained_voltage_l1l2 * 1000) >> 16,
+            int(chained_voltage_l1l2 * 1000) & 0xFFFF,
+            
+            # Block 3 - Frequency (1 register)
+            int(min(100, max(0, frequency)) * 10),  # Limit frequency to valid range (0-100 Hz)
+            
+            # Block 4 - Consumed energy (2 registers)
+            int(consumed_energy * 1000) >> 16,
+            int(consumed_energy * 1000) & 0xFFFF,
+            
+            # Block 5 - Delivered energy (2 registers)
+            int(delivered_energy * 1000) >> 16,
+            int(delivered_energy * 1000) & 0xFFFF,
+            
+            # Block 6 - Power factor (2 registers)
+            int(power_factor * 100),
+            sector_power_factor,
+            
+            # Block 7 - CT ratio (1 register)
+            ct_ratio
+        ]
         
-        # Add aggregated values
+        # Add all registers to binary data
+        for reg in registers:
+            binary_data.extend(struct.pack('>H', reg & 0xFFFF))
+        
+        # Add aggregated values (19 values, 4 bytes each)
         aggregated_values = [
             int(voltage_l1_min * 1000) if voltage_l1_min != float('inf') else 0,
             int(voltage_l1_max * 1000) if voltage_l1_max != float('-inf') else 0,
@@ -496,13 +760,14 @@ def publishPowerlog(client):
             int(current_l3_avg * 1000),
             sample_count
         ]
+        
         for value in aggregated_values:
             binary_data.extend(struct.pack('>I', value & 0xffffffff))
         
         print(f"Binary data size: {len(binary_data)} bytes")
         result = client.publish(topicPower, binary_data, qos=1)
         status = result[0]
-        if not status == 0:
+        if status != 0:
             print(f'Failed to send message to topic {topicPower}')
             
         # Reset aggregation after sending
@@ -610,37 +875,107 @@ client.on_disconnect = on_disconnect
 client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
 client.loop_start()
 
+def emdx_check_serialnumber(slaveid):
+    try:
+        emdx_serialnumber = modbusclient.read_holding_registers(int(0x2213), count=1, slave=slaveid)
+        if emdx_serialnumber.isError():
+            print(f"No EMDX slave found at address {slaveid}")
+            return False
+        print(f"Serial number read for slave {slaveid}: {emdx_serialnumber.registers[0]}")
+        return True
+    except Exception as e:
+        print(f"Error reading serial number for slave {slaveid}: {e}")
+        return False
+
+def rmu_check_serialnumber(slaveid=49):
+    try:
+        # Always use slave ID 49 for RMU/UMG devices
+        rmu_slaveid = 49
+        
+        # Read 2 registers for the serial number (spans 2 registers)
+        rmu_serialnumber = modbusclient.read_holding_registers(911, count=2, slave=rmu_slaveid)
+        if rmu_serialnumber.isError():
+            print(f"No RMU slave found at address {rmu_slaveid}")
+            return False
+            
+        # Combine the two registers to form the complete serial number
+        # High word (register 0) << 16 | Low word (register 1)
+        serial_number = (rmu_serialnumber.registers[0] << 16) | rmu_serialnumber.registers[1]
+        print(f"Serial number read for slave {rmu_slaveid}: {serial_number}")
+        return True
+    except Exception as e:
+        print(f"Error reading serial number for RMU: {e}")
+        return False
+
 if __name__ == "__main__":
     
     # First try to get the router serial
+    '''
     if getRouterSerial():
         print(f"Router serial obtained: {routerSerial}")
     else:
         print("Could not get router serial at startup, will retry later")
-    
+    '''
     # Now connect to Modbus
     modbusConnect(modbusclient)
-    
-    # Call setup functions once with slave ID 1
-    slaveid = 1
-    if setSerialNumber(slaveid):
-        logMQTT(client, topicLog, f"Serial number set for slave {slaveid}")
-    else:
-        logMQTT(client, topicLog, f"Failed to set serial number for slave {slaveid}")
+
+    # Keep trying until at least one device is connected
+    emdx_connected = False
+    rmu_connected = False
+    print("Waiting for devices to connect...")
+    while not emdx_connected and not rmu_connected:
+        # Try to connect to EMDX
+        if emdx_check_serialnumber(1):
+            print(f"Serial number read for slave 1")
+            emdx_connected = True
+        else:
+            print(f"Failed to read serial number for slave 1")
         
-    if insertStandardSettings(slaveid):
-        logMQTT(client, topicLog, f"Standard settings applied for slave {slaveid}")
-    else:
-        logMQTT(client, topicLog, f"Failed to apply standard settings for slave {slaveid}")
-    time.sleep(10) #wait for the modem to reboot
-    thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
+        print("--------------------------------")
+        
+        # Try to connect to RMU
+        if rmu_check_serialnumber(49):
+            print(f"Serial number read for slave 49")
+            rmu_connected = True
+        else:
+            print(f"Failed to read serial number for slave 49")
+        
+        print("--------------------------------")
+        
+        # If neither device is connected, wait and retry
+        if not emdx_connected and not rmu_connected:
+            print("No devices connected. Retrying in 10 seconds...")
+            time.sleep(10)
+            # Reconnect Modbus before retrying
+            modbusConnect(modbusclient)
+    
+    print("Device connection established. Continuing...")
+
+    # Call setup functions once with slave ID 1
+    if emdx_connected:
+        slaveid = 1
+        if emdx_setSerialNumber(slaveid):
+            logMQTT(client, topicLog, f"Serial number set for slave {slaveid}")
+        else:
+            logMQTT(client, topicLog, f"Failed to set serial number for slave {slaveid}")
+            
+        if emdx_insertStandardSettings(slaveid):
+            logMQTT(client, topicLog, f"Standard settings applied for slave {slaveid}")
+        else:
+            logMQTT(client, topicLog, f"Failed to apply standard settings for slave {slaveid}")
+        time.sleep(10) #wait for the modem to reboot
+
+    if rmu_connected:
+        slaveid = 49
+        print(f"RMU connected")
+
+    #thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
     thread_powerLoop = threading.Thread(target=powerLoop, daemon=True)
     
-    thread_modemLoop.start()
+    #thread_modemLoop.start()
     thread_powerLoop.start()
     
 
     while True:
         time.sleep(10)
-
         
