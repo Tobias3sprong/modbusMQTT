@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyHS0', # for production use /dev/ttyHS0
+    port='/dev/ttyHS0ß', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -327,7 +327,7 @@ def poll_voltage_and_current(slaveid=1):
                 return
                 
             # Read current registers - separate block
-            current_block = modbusclient.read_holding_registers(19012, count=4, slave=rmu_slaveid)
+            current_block = modbusclient.read_holding_registers(19012, count=3, slave=rmu_slaveid)
             if current_block.isError():
                 print("Error reading RMU current registers")
                 return
@@ -337,17 +337,10 @@ def poll_voltage_and_current(slaveid=1):
             voltage_l2 = voltage_block.registers[1] / 10.0
             voltage_l3 = voltage_block.registers[2] / 10.0
             
-            # Extract current values - each is a float spanning 2 registers
-            # Convert the two registers to a float using struct
-            current_l1_bytes = struct.pack('>HH', current_block.registers[0], current_block.registers[1])
-            current_l2_bytes = struct.pack('>HH', current_block.registers[2], current_block.registers[3])
-            current_l3_bytes = struct.pack('>HH', current_block.registers[4], current_block.registers[5])
-            current_n_bytes = struct.pack('>HH', current_block.registers[6], current_block.registers[7])
-            
-            current_l1 = struct.unpack('>f', current_l1_bytes)[0]
-            current_l2 = struct.unpack('>f', current_l2_bytes)[0]
-            current_l3 = struct.unpack('>f', current_l3_bytes)[0]
-            current_n = struct.unpack('>f', current_n_bytes)[0]
+            # Extract current values
+            current_l1 = current_block.registers[0] / 1000.0
+            current_l2 = current_block.registers[1] / 1000.0
+            current_l3 = current_block.registers[2] / 1000.0
         else:
             return
         
@@ -540,22 +533,13 @@ def publishPowerlog(client):
                     return
                 
                 # Current registers
-                block1_current = modbusclient.read_holding_registers(19012, count=4, slave=slaveid)
+                block1_current = modbusclient.read_holding_registers(19012, count=6, slave=slaveid)
                 if block1_current.isError():
                     print("Error reading RMU current registers")
                     return
                 
-                # Extract current values - each is a float spanning 2 registers
-                # Convert the two registers to a float using struct
-                current_l1_bytes = struct.pack('>HH', block1_current.registers[0], block1_current.registers[1])
-                current_l2_bytes = struct.pack('>HH', block1_current.registers[2], block1_current.registers[3])
-                current_l3_bytes = struct.pack('>HH', block1_current.registers[4], block1_current.registers[5])
-                current_n_bytes = struct.pack('>HH', block1_current.registers[6], block1_current.registers[7])
-                
-                current_l1 = struct.unpack('>f', current_l1_bytes)[0]
-                current_l2 = struct.unpack('>f', current_l2_bytes)[0]
-                current_l3 = struct.unpack('>f', current_l3_bytes)[0]
-                current_n = struct.unpack('>f', current_n_bytes)[0]
+                # Neutral current (might not be available, using 0)
+                current_n = 0
                 
                 # Power values
                 block2_power = modbusclient.read_holding_registers(19026, count=3, slave=slaveid)  # Active power
@@ -616,6 +600,16 @@ def publishPowerlog(client):
                 voltage_l1 = block1_voltage.registers[0] / 10.0
                 voltage_l2 = block1_voltage.registers[1] / 10.0
                 voltage_l3 = block1_voltage.registers[2] / 10.0
+                
+                # Currents
+                raw_current_l1 = struct.pack('>HH', block1_current.registers[0], block1_current.registers[1])
+                raw_current_l2 = struct.pack('>HH', block1_current.registers[2], block1_current.registers[3])
+                raw_current_l3 = struct.pack('>HH', block1_current.registers[4], block1_current.registers[5])
+                
+                current_l1 = struct.unpack('>f', raw_current_l1)[0]
+                current_l2 = struct.unpack('>f', raw_current_l2)[0]
+                current_l3 = struct.unpack('>f', raw_current_l3)[0]
+                logMQTT(client, topicLog, f"Currents: {current_l1}, {current_l2}, {current_l3}")
                 
                 # Power values (using first register of each group for 3-phase value)
                 active_power = block2_power.registers[0] / 1000.0
