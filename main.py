@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyHS0', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
+    port='/dev/tty.usbserial-FTWJW5L4', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -439,19 +439,6 @@ def publishPowerlog(client):
     global current_l3_min, current_l3_max, current_l3_sum
     
     try:
-        # Device-specific values that will be standardized
-        device_serial = 0
-        voltage_l1 = voltage_l2 = voltage_l3 = 0
-        current_l1 = current_l2 = current_l3 = current_n = 0
-        active_power = reactive_power = apparent_power = 0
-        sign_active = sign_reactive = 0
-        chained_voltage_l1l2 = 0
-        frequency = 0
-        consumed_energy = delivered_energy = 0
-        power_factor = sector_power_factor = 0
-        ct_ratio = 0
-        operating_hours = 0
-        
         # Read device-specific registers and convert to standardized format
         if emdx_connected:
             # --- Optimized EMDX data collection based on yanitza.py ---
@@ -805,7 +792,7 @@ def publishModemlog(client):
 def voltage_current_polling():
     global polling_active
     while polling_active:
-        try:
+        try                                                   
             poll_voltage_and_current()
             time.sleep(0.2)  # Poll at 2Hz (twice per second)
         except Exception as e:
