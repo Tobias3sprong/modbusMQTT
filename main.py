@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU
 modbusclient = ModbusSerialClient(
-    port='/dev/tty.usbserial-FTWJW5L4', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
+    port='/dev/ttyHS0', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -792,7 +792,7 @@ def publishModemlog(client):
 def voltage_current_polling():
     global polling_active
     while polling_active:
-        try                                                   
+        try:
             poll_voltage_and_current()
             time.sleep(0.2)  # Poll at 2Hz (twice per second)
         except Exception as e:
