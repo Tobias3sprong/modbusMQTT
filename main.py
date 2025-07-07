@@ -40,7 +40,7 @@ voltage_l1_max = float('-inf')
 voltage_l1_sum = 0
 voltage_l2_min = float('inf')
 voltage_l2_max = float('-inf')
-voltage_l2_sum = 0
+voltage_l2_sum = 0      
 voltage_l3_min = float('inf')
 voltage_l3_max = float('-inf')
 voltage_l3_sum = 0
@@ -474,12 +474,7 @@ def publishPowerlog(client):
                 print("Error reading EMDX power registers")
                 return
             
-            active_power = (block2.registers[0] << 16 | block2.registers[1]) / 1000.0
-            reactive_power = (block2.registers[2] << 16 | block2.registers[3]) / 1000.0
-            apparent_power = (block2.registers[4] << 16 | block2.registers[5]) / 1000.0
-            sign_active = block2.registers[6]
-            sign_reactive = block2.registers[7]
-            chained_voltage_l1l2 = (block2.registers[8] << 16 | block2.registers[9]) / 1000.0
+
             
             # Read frequency
             block3 = modbusclient.read_holding_registers(int(0x1026), count=1, slave=slaveid)
@@ -511,6 +506,18 @@ def publishPowerlog(client):
                 print("Error reading EMDX CT ratio register")
                 return
             
+            active_power = (block2.registers[0] << 16 | block2.registers[1]) / 1000.0
+            reactive_power = (block2.registers[2] << 16 | block2.registers[3]) / 1000.0
+            apparent_power = (block2.registers[4] << 16 | block2.registers[5]) / 1000.0
+            ct_ratio = block7.registers[0]
+            if ct_ratio < 5000:
+                active_power = active_power * 0.01
+                reactive_power = reactive_power * 0.01
+                apparent_power = apparent_power * 0.01
+            sign_active = block2.registers[6]
+            sign_reactive = block2.registers[7]
+            chained_voltage_l1l2 = (block2.registers[8] << 16 | block2.registers[9]) / 1000.0
+
             # Read operating hours
             block9 = modbusclient.read_holding_registers(int(0x106E), count=1, slave=slaveid)
             if not block9.isError():
@@ -519,7 +526,7 @@ def publishPowerlog(client):
             # Process values
             power_factor = block6.registers[0] / 1000.0
             sector_power_factor = block6.registers[1]
-            ct_ratio = block7.registers[0]
+
             consumed_energy = (block4.registers[0] << 16 | block4.registers[1]) / 1000.0
             delivered_energy = (block5.registers[0] << 16 | block5.registers[1]) / 1000.0
             
