@@ -425,6 +425,31 @@ def reset_aggregation():
     current_l3_sum = 0
     sample_count = 0
 
+def scale_energy_by_ct_ratio(energy_value, ct_ratio):
+    """
+    Scale energy values based on CT ratio ranges:
+    1.000.000 Wh, varh 100.000 ≤ ct_ratio < 1.000.000
+    100.000 Wh, varh 10.000 ≤ ct_ratio < 100.000
+    10.000 Wh, varh 1.000 ≤ ct_ratio < 10.000
+    1.000 Wh, varh 100 ≤ ct_ratio < 1.000
+    100 Wh, varh 10 ≤ ct_ratio < 100
+    10 Wh, varh 1 ≤ ct_ratio < 10
+    """
+    if ct_ratio >= 100000:
+        return energy_value * 1000000  # 1.000.000 Wh
+    elif ct_ratio >= 10000:
+        return energy_value * 100000   # 100.000 Wh
+    elif ct_ratio >= 1000:
+        return energy_value * 10000    # 10.000 Wh
+    elif ct_ratio >= 100:
+        return energy_value * 1000     # 1.000 Wh
+    elif ct_ratio >= 10:
+        return energy_value * 100      # 100 Wh
+    elif ct_ratio >= 1:
+        return energy_value * 10       # 10 Wh
+    else:
+        return energy_value  # No scaling for ct_ratio < 1
+
 def publishPowerlog(client):
     """
     Publish power data in a standardized binary format compatible with the JavaScript parser.
@@ -474,9 +499,14 @@ def publishPowerlog(client):
                 print("Error reading EMDX power registers")
                 return
             
+            ct_ratio = block7.registers[0]
             active_power = (block2.registers[0] << 16 | block2.registers[1]) / 1000.0
             reactive_power = (block2.registers[2] << 16 | block2.registers[3]) / 1000.0
             apparent_power = (block2.registers[4] << 16 | block2.registers[5]) / 1000.0
+            if ct_ratio < 5000:
+                active_power = active_power * 0.01
+                reactive_power = reactive_power * 0.01
+                apparent_power = apparent_power * 0.01
             sign_active = block2.registers[6]
             sign_reactive = block2.registers[7]
             chained_voltage_l1l2 = (block2.registers[8] << 16 | block2.registers[9]) / 1000.0
@@ -519,9 +549,9 @@ def publishPowerlog(client):
             # Process values
             power_factor = block6.registers[0] / 1000.0
             sector_power_factor = block6.registers[1]
-            ct_ratio = block7.registers[0]
-            consumed_energy = (block4.registers[0] << 16 | block4.registers[1]) / 1000.0
-            delivered_energy = (block5.registers[0] << 16 | block5.registers[1]) / 1000.0
+            consumed_energy = scale_energy_by_ct_ratio((block4.registers[0] << 16 | block4.registers[1]) / 1000.0, ct_ratio)
+            delivered_energy = scale_energy_by_ct_ratio((block5.registers[0] << 16 | block5.registers[1]) / 1000.0, ct_ratio)
+
             
         elif rmu_connected:
             # --- Optimized RMU data collection based on yanitza.py ---
@@ -551,7 +581,8 @@ def publishPowerlog(client):
             
             # Process serial number
             device_serial = (block8.registers[0] << 16) | block8.registers[1]
-            
+            ct_ratio = block7.registers[0]  # Use primary CT ratio
+
             # Extract voltage values
             voltage_l1 = struct.unpack('>f', struct.pack('>HH', main_registers.registers[0], main_registers.registers[1]))[0]
             voltage_l2 = struct.unpack('>f', struct.pack('>HH', main_registers.registers[2], main_registers.registers[3]))[0]
@@ -567,7 +598,7 @@ def publishPowerlog(client):
             active_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[26], main_registers.registers[27]))[0]
             reactive_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[32], main_registers.registers[33]))[0]
             apparent_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[38], main_registers.registers[39]))[0]
-            
+
             # Frequency (original block3) - offset by 50 from start (19050-19000)
             raw_freq_bytes = struct.pack('>HH', main_registers.registers[50], main_registers.registers[51])
             frequency = struct.unpack('>f', raw_freq_bytes)[0]
@@ -575,10 +606,11 @@ def publishPowerlog(client):
             # Energy values and power factor
             consumed_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[68], main_registers.registers[69]))[0]
             delivered_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[76], main_registers.registers[77]))[0]
+
             power_factor = struct.unpack('>f', struct.pack('>HH', main_registers.registers[84], main_registers.registers[85]))[0]
             
             sector_power_factor = 0  # May not be available
-            ct_ratio = block7.registers[0]  # Use primary CT ratio
+
             
             # Get operating hours
             operating_hours = round(struct.unpack('>I', struct.pack('>HH', block9.registers[0], block9.registers[1]))[0] / 3600, 1)
