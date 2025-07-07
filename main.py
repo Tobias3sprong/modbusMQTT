@@ -13,7 +13,7 @@ with open(json_file_path, "r") as f:
     credentials = json.load(f)
 
 # MODBUS
-# Set up modbus RTU
+# Set up modbus RTU for production use
 modbusclient = ModbusSerialClient(
     port='/dev/ttyHS0', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
     stopbits=1,
