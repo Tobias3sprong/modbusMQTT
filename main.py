@@ -318,19 +318,19 @@ def scale_energy_by_ct_ratio(energy_value, ct_ratio):
     10 Wh, varh 1 ≤ ct_ratio < 10
     """
     if ct_ratio >= 100000:
-        return energy_value * 1000000  # 1.000.000 Wh
+        return energy_value / 1000  # 1.000.000 Wh
     elif ct_ratio >= 10000:
-        return energy_value * 100000   # 100.000 Wh
+        return energy_value / 100   # 100.000 Wh
     elif ct_ratio >= 1000:
-        return energy_value * 10000    # 10.000 Wh
+        return energy_value / 10    # 10.000 Wh
     elif ct_ratio >= 100:
-        return energy_value * 1000     # 1.000 Wh
+        return energy_value * 1        # 1.000 Wh
     elif ct_ratio >= 10:
-        return energy_value * 100      # 100 Wh
+        return energy_value * 10      # 100 Wh
     elif ct_ratio >= 1:
-        return energy_value * 10       # 10 Wh
+        return energy_value * 100       # 10 Wh
     else:
-        return energy_value  # No scaling for ct_ratio < 1
+        return energy_value * 1000  # No scaling for ct_ratio < 1
 
 def poll_voltage_and_current(slaveid=1):
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
@@ -550,9 +550,11 @@ def publishPowerlog(client):
             # Process values
             power_factor = block6.registers[0] / 1000.0
             sector_power_factor = block6.registers[1]
-
-            consumed_energy = scale_energy_by_ct_ratio((block4.registers[0] << 16 | block4.registers[1]) / 1000.0, ct_ratio)
-            delivered_energy = scale_energy_by_ct_ratio((block5.registers[0] << 16 | block5.registers[1]) / 1000.0, ct_ratio)
+            print(ct_ratio)
+            print(block4.registers[0] << 16 | block4.registers[1])
+            consumed_energy = scale_energy_by_ct_ratio((block4.registers[0] << 16 | block4.registers[1]), ct_ratio)
+            print(consumed_energy)
+            delivered_energy = scale_energy_by_ct_ratio((block5.registers[0] << 16 | block5.registers[1]), ct_ratio)
             
         elif rmu_connected:
             # --- Optimized RMU data collection based on yanitza.py ---
@@ -731,12 +733,12 @@ def publishPowerlog(client):
             int(min(100, max(0, frequency)) * 10),  # Limit frequency to valid range (0-100 Hz)
             
             # Block 4 - Consumed energy (2 registers)
-            int(consumed_energy * 1000) >> 16,
-            int(consumed_energy * 1000) & 0xFFFF,
+            int(consumed_energy) >> 16,
+            int(consumed_energy) & 0xFFFF,
             
             # Block 5 - Delivered energy (2 registers)
-            int(delivered_energy * 1000) >> 16,
-            int(delivered_energy * 1000) & 0xFFFF,
+            int(delivered_energy) >> 16,
+            int(delivered_energy) & 0xFFFF,
             
             # Block 6 - Power factor (2 registers)
             int(power_factor * 100),
