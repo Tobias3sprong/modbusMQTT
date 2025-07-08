@@ -68,7 +68,7 @@ def getRouterSerial():
             # Now that we have the router serial, update the topic definitions
             topicReset = f"ET/powerlogger/{routerSerial}/reset"
             topicConfig = f"ET/powerlogger/{routerSerial}/config"
-            topicLog = f"ET/modemlogger/{routerSerial}/log"
+            topicLog = f"ET/modemlogger/log"
             
             # Update the will message with the proper topic
             client.will_set(topicLog, json.dumps({"timestamp": time.time(), "routerSerial": routerSerial, "log": "Disconnected"}), retain=True)
