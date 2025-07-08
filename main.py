@@ -318,19 +318,19 @@ def scale_energy_by_ct_ratio(energy_value, ct_ratio):
     10 Wh, varh 1 ≤ ct_ratio < 10
     """
     if ct_ratio >= 100000:
-        return energy_value / 1000  # 1.000.000 Wh
+        return energy_value * 1000  # 1.000.000 Wh
     elif ct_ratio >= 10000:
-        return energy_value / 100   # 100.000 Wh
+        return energy_value * 100   # 100.000 Wh
     elif ct_ratio >= 1000:
-        return energy_value / 10    # 10.000 Wh
+        return energy_value * 10    # 10.000 Wh
     elif ct_ratio >= 100:
         return energy_value * 1        # 1.000 Wh
     elif ct_ratio >= 10:
-        return energy_value * 10      # 100 Wh
+        return energy_value / 10      # 100 Wh
     elif ct_ratio >= 1:
-        return energy_value * 100       # 10 Wh
+        return energy_value / 100       # 10 Wh
     else:
-        return energy_value * 1000  # No scaling for ct_ratio < 1
+        return energy_value / 1000  # No scaling for ct_ratio < 1
 
 def poll_voltage_and_current(slaveid=1):
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
