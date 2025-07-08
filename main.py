@@ -307,6 +307,30 @@ def on_message(client, userdata, msg):
             logMQTT(client, topicLog, f"Invalid config message: {str(error)}")
     else:
         print(f"Received message on unexpected topic: {msg.topic}")
+def scale_energy_by_ct_ratio(energy_value, ct_ratio):
+    """
+    Scale energy values based on CT ratio ranges:
+    1.000.000 Wh, varh 100.000 ≤ ct_ratio < 1.000.000
+    100.000 Wh, varh 10.000 ≤ ct_ratio < 100.000
+    10.000 Wh, varh 1.000 ≤ ct_ratio < 10.000
+    1.000 Wh, varh 100 ≤ ct_ratio < 1.000
+    100 Wh, varh 10 ≤ ct_ratio < 100
+    10 Wh, varh 1 ≤ ct_ratio < 10
+    """
+    if ct_ratio >= 100000:
+        return energy_value * 1000000  # 1.000.000 Wh
+    elif ct_ratio >= 10000:
+        return energy_value * 100000   # 100.000 Wh
+    elif ct_ratio >= 1000:
+        return energy_value * 10000    # 10.000 Wh
+    elif ct_ratio >= 100:
+        return energy_value * 1000     # 1.000 Wh
+    elif ct_ratio >= 10:
+        return energy_value * 100      # 100 Wh
+    elif ct_ratio >= 1:
+        return energy_value * 10       # 10 Wh
+    else:
+        return energy_value  # No scaling for ct_ratio < 1
 
 def poll_voltage_and_current(slaveid=1):
     global voltage_l1_min, voltage_l1_max, voltage_l1_sum
@@ -527,8 +551,8 @@ def publishPowerlog(client):
             power_factor = block6.registers[0] / 1000.0
             sector_power_factor = block6.registers[1]
 
-            consumed_energy = (block4.registers[0] << 16 | block4.registers[1]) / 1000.0
-            delivered_energy = (block5.registers[0] << 16 | block5.registers[1]) / 1000.0
+            consumed_energy = scale_energy_by_ct_ratio((block4.registers[0] << 16 | block4.registers[1]) / 1000.0, ct_ratio)
+            delivered_energy = scale_energy_by_ct_ratio((block5.registers[0] << 16 | block5.registers[1]) / 1000.0, ct_ratio)
             
         elif rmu_connected:
             # --- Optimized RMU data collection based on yanitza.py ---
