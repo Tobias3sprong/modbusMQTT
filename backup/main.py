@@ -314,7 +314,6 @@ def poll_voltage_and_current(slaveid=1):
     try:
         # Read voltage and current registers (block1)
         block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
-        
         if block1.isError():
             print("Error reading voltage and current registers")
             return
@@ -322,7 +321,6 @@ def poll_voltage_and_current(slaveid=1):
         # Extract values (assuming registers contain raw values that might need scaling)
         # Voltage L1 (registers 0-1)
         voltage_l1 = (block1.registers[0] << 16 | block1.registers[1]) / 1000.0  # assuming voltage in V with scaling
-        
         # Voltage L2 (registers 2-3)
         voltage_l2 = (block1.registers[2] << 16 | block1.registers[3]) / 1000.0
         
