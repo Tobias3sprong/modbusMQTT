@@ -597,9 +597,9 @@ def publishPowerlog(client):
             current_n = struct.unpack('>f', struct.pack('>HH', main_registers.registers[18], main_registers.registers[19]))[0]
             
             # Power values (offsets calculated from their original addresses)
-            active_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[26], main_registers.registers[27]))[0] / 1000
-            reactive_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[32], main_registers.registers[33]))[0] / 1000
-            apparent_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[38], main_registers.registers[39]))[0] / 1000
+            active_power = struct.unpack('>f', (struct.pack('>HH', main_registers.registers[26], main_registers.registers[27]))[0]) / 1000
+            reactive_power = struct.unpack('>f', (struct.pack('>HH', main_registers.registers[32], main_registers.registers[33]))[0]) / 1000
+            apparent_power = struct.unpack('>f', (struct.pack('>HH', main_registers.registers[38], main_registers.registers[39]))[0]) / 1000
             
             # Frequency (original block3) - offset by 50 from start (19050-19000)
             raw_freq_bytes = struct.pack('>HH', main_registers.registers[50], main_registers.registers[51])
