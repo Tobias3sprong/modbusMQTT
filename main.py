@@ -15,7 +15,7 @@ with open(json_file_path, "r") as f:
 # MODBUS
 # Set up modbus RTU for production use
 modbusclient = ModbusSerialClient(
-    port='/dev/ttyHS0', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
+    port='/dev/ttyttyHS0', # for production use /dev/ttyHS0, local /dev/tty.usbserial-FTWJW5L4
     stopbits=1,
     bytesize=8,
     parity='N',
@@ -254,7 +254,7 @@ def logMQTT(client, topic, logMessage):
         except Exception as e:
             print(f'Error publishing log message: {str(e)}')
 
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0 and client.is_connected():
         # Only subscribe if topics are properly defined
         if topicReset and topicConfig:
@@ -262,7 +262,7 @@ def on_connect(client, userdata, flags, rc):
             client.subscribe(topicConfig)
             print(f"Subscribed to {topicReset} and {topicConfig}")
 
-def on_disconnect(client, userdata, rc):
+def on_disconnect(client, userdata, rc, properties=None):
     print(f"MQTT disconnected with result code: {rc}")
     if rc != 0:
         print("Unexpected disconnection. Attempting to reconnect...")
@@ -598,9 +598,9 @@ def publishPowerlog(client):
             
             # Power values (offsets calculated from their original addresses)
             active_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[26], main_registers.registers[27]))[0] / 1000
-            reactive_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[32], main_registers.registers[33]))[0] / 1000
-            apparent_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[38], main_registers.registers[39]))[0] / 1000
-            
+            apparent_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[34], main_registers.registers[35]))[0] / 1000
+            reactive_power = struct.unpack('>f', struct.pack('>HH', main_registers.registers[42], main_registers.registers[43]))[0] / 1000
+
             # Frequency (original block3) - offset by 50 from start (19050-19000)
             raw_freq_bytes = struct.pack('>HH', main_registers.registers[50], main_registers.registers[51])
             frequency = struct.unpack('>f', raw_freq_bytes)[0]
@@ -608,14 +608,13 @@ def publishPowerlog(client):
             # Energy values and power factor
             consumed_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[68], main_registers.registers[69]))[0]
             delivered_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[76], main_registers.registers[77]))[0]
-            power_factor = struct.unpack('>f', struct.pack('>HH', main_registers.registers[84], main_registers.registers[85]))[0]
-            
+            power_factor = active_power/apparent_power/10
             sector_power_factor = 0  # May not be available
             ct_ratio = block7.registers[0]  # Use primary CT ratio
             
             # Get operating hours
             operating_hours = round(struct.unpack('>I', struct.pack('>HH', block9.registers[0], block9.registers[1]))[0] / 3600, 1)
-            
+            print(operating_hours)
             # Set signs to 0 as they might not be directly available
             sign_active = 0
             sign_reactive = 0
@@ -882,7 +881,7 @@ topicConfig = None
 topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
 # Initialize MQTT client after all functions are defined
-client = mqtt_client.Client(client_id=client_id, clean_session=False)
+client = mqtt_client.Client(client_id=client_id, clean_session=False, callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
 client.username_pw_set(USERNAME, PASSWORD)
 client.on_connect = on_connect
 client.on_message = on_message
