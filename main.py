@@ -82,7 +82,7 @@ def getRouterSerial():
 
 def modbusConnect(modbusclient):
     while modbusclient.connect() == False:
-        logMQTT(client, topicLog, "Modbus RTU initialisation failed")
+        logMQTT(client, topicLog, "Modbus RTU initialisation failed - is the port correct?")
         time.sleep(1)
 
 
