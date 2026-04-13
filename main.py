@@ -1035,7 +1035,7 @@ if __name__ == "__main__":
     if rmu_connected:
         slaveid = 49
         print(f"RMU connected")
-        rmu_update_ct_settings(400,1)
+        #rmu_update_ct_settings(400,1)
     thread_modemLoop = threading.Thread(target=modemLoop, daemon=True)
     thread_powerLoop = threading.Thread(target=powerLoop, daemon=True)
     
