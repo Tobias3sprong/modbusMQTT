@@ -28,6 +28,23 @@ tcpClient = ModbusTcpClient(
     port=502
 )
 
+# pymodbus clients are NOT thread-safe: only one request/response frame may be on
+# the wire at a time. These locks serialise every access to the shared transports
+# so the polling thread and the publish threads can never interleave frames.
+modbus_lock = threading.Lock()  # protects the RTU client (modbusclient)
+tcp_lock = threading.Lock()     # protects the TCP client (tcpClient)
+agg_lock = threading.Lock()     # protects the voltage/current aggregation state
+
+def mb_read(*args, **kwargs):
+    """Thread-safe read on the RTU client."""
+    with modbus_lock:
+        return modbusclient.read_holding_registers(*args, **kwargs)
+
+def mb_write(*args, **kwargs):
+    """Thread-safe write on the RTU client."""
+    with modbus_lock:
+        return modbusclient.write_registers(*args, **kwargs)
+
 routerSerial = "0000000000000000"
 # These topics will be properly defined after getting routerSerial
 topicReset = None
@@ -57,61 +74,73 @@ sample_count = 0
 polling_active = True
 
 def getRouterSerial():
-    global routerSerial, topicReset, topicConfig, topicLog, client
+    global routerSerial, topicReset, topicConfig, topicLog
     try:
         print("Attempting to connect to Modbus TCP server to get router serial...")
-        if tcpClient.connect():
+        with tcp_lock:
+            if not tcpClient.connect():
+                return False
             serialData = tcpClient.read_holding_registers(39, count=16)
+            if serialData.isError():
+                print(f"Error reading router serial register: {serialData}")
+                return False
             serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
             routerSerial = serialByteData.decode('ascii').split('\00')[0]
-            
-            # Now that we have the router serial, update the topic definitions
-            topicReset = f"ET/powerlogger/{routerSerial}/reset"
-            topicConfig = f"ET/powerlogger/{routerSerial}/config"
-            topicLog = f"ET/modemlogger/log"
-            
-            # Update the will message with the proper topic
-            client.will_set(topicLog, json.dumps({"timestamp": time.time(), "routerSerial": routerSerial, "log": "Disconnected"}), retain=True)
-            
             # Close connection temporarily
             tcpClient.close()
-            return True
+
+        # Now that we have the router serial, update the topic definitions
+        topicReset = f"ET/powerlogger/{routerSerial}/reset"
+        topicConfig = f"ET/powerlogger/{routerSerial}/config"
+        topicLog = "ET/modemlogger/log"
+        return True
     except Exception as e:
         print(f"Failed to get router serial: {e}")
         return False
 
 def modbusConnect(modbusclient):
-    while modbusclient.connect() == False:
+    with modbus_lock:
+        connected = modbusclient.connect()
+    while not connected:
         logMQTT(client, topicLog, "Modbus RTU initialisation failed - is the port correct?")
         time.sleep(1)
+        with modbus_lock:
+            connected = modbusclient.connect()
 
 
 def modbusTcpConnect(tcpClient):
     global routerSerial, topicReset, topicConfig, topicLog
     print("Attempting to connect to Modbus TCP server...")
-    while not tcpClient.connect():
+    with tcp_lock:
+        connected = tcpClient.connect()
+    while not connected:
         logMQTT(client, topicLog, "Modbus TCP initialisation failed, retrying...")
         time.sleep(1)  # Wait for 2 seconds before retrying
-    
+        with tcp_lock:
+            connected = tcpClient.connect()
+
     # Only update the router serial if it hasn't been fetched already
     if routerSerial == "0000000000000000":
-        serialData = tcpClient.read_holding_registers(39, count=16)
-        serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
-        routerSerial = serialByteData.decode('ascii').split('\00')[0]
-        
-        # Now that we have the router serial, update the topic definitions
-        topicReset = f"ET/powerlogger/{routerSerial}/reset"
-        topicConfig = f"ET/powerlogger/{routerSerial}/config"
-        topicLog = f"ET/modemlogger/{routerSerial}/log"
-    
+        with tcp_lock:
+            serialData = tcpClient.read_holding_registers(39, count=16)
+        if not serialData.isError():
+            serialByteData = b''.join(struct.pack('>H', reg) for reg in serialData.registers)
+            routerSerial = serialByteData.decode('ascii').split('\00')[0]
+
+            # Now that we have the router serial, update the topic definitions
+            topicReset = f"ET/powerlogger/{routerSerial}/reset"
+            topicConfig = f"ET/powerlogger/{routerSerial}/config"
+            topicLog = "ET/modemlogger/log"
+
     # Subscribe to topics with proper serial number
-    client.subscribe(topicReset)
-    client.subscribe(topicConfig)
+    if topicReset and topicConfig:
+        client.subscribe(topicReset)
+        client.subscribe(topicConfig)
     logMQTT(client, topicLog, "Successfully connected to Modbus TCP server!")
 
 #functions for emdx
 def emdx_send_master_unlock(slaveid):
-    result = modbusclient.write_registers(address=0x2700, values=[0x5AA5], slave=slaveid)
+    result = mb_write(address=0x2700, values=[0x5AA5], slave=slaveid)
     if result.isError():
         print(f"Error sending Master Unlock Key: {result}")
         return False
@@ -121,7 +150,7 @@ def emdx_save_to_eeprom(slaveid):
     if not emdx_send_master_unlock(slaveid):
         return False
     
-    result = modbusclient.write_registers(address=0x2600, values=[0x000A], slave=slaveid)
+    result = mb_write(address=0x2600, values=[0x000A], slave=slaveid)
     if result.isError():
         print(f"Error saving to EEPROM: {result}")
         return False
@@ -130,7 +159,7 @@ def emdx_save_to_eeprom(slaveid):
 def emdx_setSerialNumber(slaveid):
     try:
         # Check current value
-        check_result = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
+        check_result = mb_read(address=0x2213, count=1, slave=slaveid)
         if check_result.isError():
             print(f"Error reading register 0x2213: {check_result}")
             return False
@@ -144,7 +173,7 @@ def emdx_setSerialNumber(slaveid):
             return True
         
         # Read all registers in the group
-        read_result = modbusclient.read_holding_registers(address=0x2200, count=24, slave=slaveid)
+        read_result = mb_read(address=0x2200, count=24, slave=slaveid)
         if read_result.isError():
             print(f"Error reading register group: {read_result}")
             return False
@@ -158,7 +187,7 @@ def emdx_setSerialNumber(slaveid):
         
         # Write and save changes
         if not emdx_send_master_unlock(slaveid) or \
-           modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
+           mb_write(address=0x2200, values=values, slave=slaveid).isError() or \
            not emdx_save_to_eeprom(slaveid):
             print("Failed to write or save changes")
             return False
@@ -167,7 +196,7 @@ def emdx_setSerialNumber(slaveid):
         time.sleep(10)
         
                 # Read all registers in the group
-        read_result = modbusclient.read_holding_registers(address=0x2200, count=24, slave=slaveid)
+        read_result = mb_read(address=0x2200, count=24, slave=slaveid)
         if read_result.isError():
             print(f"Error reading register group: {read_result}")
             return False
@@ -179,13 +208,13 @@ def emdx_setSerialNumber(slaveid):
         
         # Write and save changes
         if not emdx_send_master_unlock(slaveid) or \
-           modbusclient.write_registers(address=0x2200, values=values, slave=slaveid).isError() or \
+           mb_write(address=0x2200, values=values, slave=slaveid).isError() or \
            not emdx_save_to_eeprom(slaveid):
             print("Failed to write or save changes")
             return False
             
         # Verify change
-        verify = modbusclient.read_holding_registers(address=0x2213, count=1, slave=slaveid)
+        verify = mb_read(address=0x2213, count=1, slave=slaveid)
         if verify.isError() or verify.registers[0] != new_value:
             print("Verification failed")
             return False
@@ -200,7 +229,7 @@ def emdx_setSerialNumber(slaveid):
 def emdx_insertStandardSettings(slaveid):
     try:
         # Read current values
-        read_result = modbusclient.read_holding_registers(address=0x2000, count=16, slave=slaveid)
+        read_result = mb_read(address=0x2000, count=16, slave=slaveid)
         if read_result.isError():
             print(f"Error reading register group: {read_result}")
             return False
@@ -218,7 +247,7 @@ def emdx_insertStandardSettings(slaveid):
 
         # Write and save changes
         if not emdx_send_master_unlock(slaveid) or \
-           modbusclient.write_registers(address=0x2000, values=values, slave=slaveid).isError() or \
+           mb_write(address=0x2000, values=values, slave=slaveid).isError() or \
            not emdx_save_to_eeprom(slaveid):
             print("Failed to write or save changes")
             return False
@@ -263,19 +292,18 @@ def on_connect(client, userdata, flags, rc, properties=None):
             print(f"Subscribed to {topicReset} and {topicConfig}")
 
 def on_disconnect(client, userdata, rc, properties=None):
+    # Do NOT call client.reconnect() here: this runs on paho's network-loop thread
+    # and can deadlock. loop_start() + reconnect_delay_set() reconnect automatically.
     print(f"MQTT disconnected with result code: {rc}")
     if rc != 0:
-        print("Unexpected disconnection. Attempting to reconnect...")
-        try:
-            client.reconnect()
-        except Exception as e:
-            print(f"Reconnect failed: {e}")
+        print("Unexpected disconnection. paho will reconnect automatically...")
 #end of mqtt functions
 
 #functions for modem
 def rebootModem():
     try:
-        tcpClient.write_register(206, 1)
+        with tcp_lock:
+            tcpClient.write_register(206, 1)
     except:
         logMQTT(client, topicLog, "Reboot failed, or pending...")
     else:
@@ -349,7 +377,7 @@ def poll_voltage_and_current(slaveid=1):
         # Read voltage and current registers based on connected device type
         if emdx_connected:
             # For EMDX, use the provided slaveid (typically 1)
-            block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+            block1 = mb_read(int(0x1000), count=14, slave=slaveid)
             if block1.isError():
                 print("Error reading EMDX voltage and current registers")
                 return
@@ -367,13 +395,13 @@ def poll_voltage_and_current(slaveid=1):
             rmu_slaveid = 49
             
             # Read voltage registers - first block
-            voltage_block = modbusclient.read_holding_registers(19000, count=6, slave=rmu_slaveid)
+            voltage_block = mb_read(19000, count=6, slave=rmu_slaveid)
             if voltage_block.isError():
                 print("Error reading RMU voltage registers")
                 return
                 
             # Read current registers - separate block
-            current_block = modbusclient.read_holding_registers(19012, count=8, slave=rmu_slaveid)
+            current_block = mb_read(19012, count=8, slave=rmu_slaveid)
             if current_block.isError():
                 print("Error reading RMU current registers")
                 return
@@ -390,33 +418,35 @@ def poll_voltage_and_current(slaveid=1):
         else:
             return
         
-        # Update min, max, and sum for each value
-        voltage_l1_min = min(voltage_l1_min, voltage_l1)
-        voltage_l1_max = max(voltage_l1_max, voltage_l1)
-        voltage_l1_sum += voltage_l1
-        
-        voltage_l2_min = min(voltage_l2_min, voltage_l2)
-        voltage_l2_max = max(voltage_l2_max, voltage_l2)
-        voltage_l2_sum += voltage_l2
-        
-        voltage_l3_min = min(voltage_l3_min, voltage_l3)
-        voltage_l3_max = max(voltage_l3_max, voltage_l3)
-        voltage_l3_sum += voltage_l3
-        
-        current_l1_min = min(current_l1_min, current_l1)
-        current_l1_max = max(current_l1_max, current_l1)
-        current_l1_sum += current_l1
-        
-        current_l2_min = min(current_l2_min, current_l2)
-        current_l2_max = max(current_l2_max, current_l2)
-        current_l2_sum += current_l2
-        
-        current_l3_min = min(current_l3_min, current_l3)
-        current_l3_max = max(current_l3_max, current_l3)
-        current_l3_sum += current_l3
-        
-        sample_count += 1
-        
+        # Update min, max, and sum for each value (under agg_lock: publishPowerlog
+        # snapshots and resets this same window from another thread).
+        with agg_lock:
+            voltage_l1_min = min(voltage_l1_min, voltage_l1)
+            voltage_l1_max = max(voltage_l1_max, voltage_l1)
+            voltage_l1_sum += voltage_l1
+
+            voltage_l2_min = min(voltage_l2_min, voltage_l2)
+            voltage_l2_max = max(voltage_l2_max, voltage_l2)
+            voltage_l2_sum += voltage_l2
+
+            voltage_l3_min = min(voltage_l3_min, voltage_l3)
+            voltage_l3_max = max(voltage_l3_max, voltage_l3)
+            voltage_l3_sum += voltage_l3
+
+            current_l1_min = min(current_l1_min, current_l1)
+            current_l1_max = max(current_l1_max, current_l1)
+            current_l1_sum += current_l1
+
+            current_l2_min = min(current_l2_min, current_l2)
+            current_l2_max = max(current_l2_max, current_l2)
+            current_l2_sum += current_l2
+
+            current_l3_min = min(current_l3_min, current_l3)
+            current_l3_max = max(current_l3_max, current_l3)
+            current_l3_sum += current_l3
+
+            sample_count += 1
+
     except Exception as e:
         print(f"Error polling voltage and current: {e}")
 
@@ -463,20 +493,25 @@ def publishPowerlog(client):
     global current_l3_min, current_l3_max, current_l3_sum
     
     try:
+        # Sensible defaults so a single failed/optional register read can't leave a
+        # variable undefined and blow up the whole publish further down.
+        operating_hours = 0
+        current_n = 0
+
         # Read device-specific registers and convert to standardized format
         if emdx_connected:
             # --- Optimized EMDX data collection based on yanitza.py ---
             slaveid = 1
             
             # Read serial number
-            block8 = modbusclient.read_holding_registers(int(0x2213), count=1, slave=slaveid)
+            block8 = mb_read(int(0x2213), count=1, slave=slaveid)
             if block8.isError():
                 print("Error reading EMDX serial number register")
                 return
             device_serial = block8.registers[0]
             
             # Read voltage and current registers
-            block1 = modbusclient.read_holding_registers(int(0x1000), count=14, slave=slaveid)
+            block1 = mb_read(int(0x1000), count=14, slave=slaveid)
             if block1.isError():
                 print("Error reading EMDX voltage and current registers")
                 return
@@ -493,7 +528,7 @@ def publishPowerlog(client):
             current_n = (block1.registers[12] << 16 | block1.registers[13]) / 1000.0
             
             # Read power values
-            block2 = modbusclient.read_holding_registers(int(0x1014), count=10, slave=slaveid)
+            block2 = mb_read(int(0x1014), count=10, slave=slaveid)
             if block2.isError():
                 print("Error reading EMDX power registers")
                 return
@@ -501,31 +536,31 @@ def publishPowerlog(client):
 
             
             # Read frequency
-            block3 = modbusclient.read_holding_registers(int(0x1026), count=1, slave=slaveid)
+            block3 = mb_read(int(0x1026), count=1, slave=slaveid)
             if block3.isError():
                 print("Error reading EMDX frequency register")
                 return
             frequency = block3.registers[0] / 10.0
             
             # Read energy values
-            block4 = modbusclient.read_holding_registers(int(0x101c), count=2, slave=slaveid)
+            block4 = mb_read(int(0x101c), count=2, slave=slaveid)
             if block4.isError():
                 print("Error reading EMDX consumed energy registers")
                 return
             
-            block5 = modbusclient.read_holding_registers(int(0x1020), count=2, slave=slaveid)
+            block5 = mb_read(int(0x1020), count=2, slave=slaveid)
             if block5.isError():
                 print("Error reading EMDX delivered energy registers")
                 return
             
             # Read power factor
-            block6 = modbusclient.read_holding_registers(int(0x1024), count=2, slave=slaveid)
+            block6 = mb_read(int(0x1024), count=2, slave=slaveid)
             if block6.isError():
                 print("Error reading EMDX power factor registers")
                 return
             
             # Read CT ratio
-            block7 = modbusclient.read_holding_registers(int(0x1200), count=1, slave=slaveid)
+            block7 = mb_read(int(0x1200), count=1, slave=slaveid)
             if block7.isError():
                 print("Error reading EMDX CT ratio register")
                 return
@@ -543,7 +578,7 @@ def publishPowerlog(client):
             chained_voltage_l1l2 = (block2.registers[8] << 16 | block2.registers[9]) / 1000.0
 
             # Read operating hours
-            block9 = modbusclient.read_holding_registers(int(0x106E), count=1, slave=slaveid)
+            block9 = mb_read(int(0x106E), count=1, slave=slaveid)
             if not block9.isError():
                 operating_hours = block9.registers[0]
             
@@ -561,23 +596,23 @@ def publishPowerlog(client):
             slaveid = 49
             
             # Read all consecutive registers from 19000 to 19085 in one request
-            main_registers = modbusclient.read_holding_registers(19000, count=86, slave=slaveid)
+            main_registers = mb_read(19000, count=86, slave=slaveid)
             if main_registers.isError():
                 print("Error reading main RMU registers")
                 return
                 
             # Read the non-consecutive registers separately
-            block7 = modbusclient.read_holding_registers(600, count=2, slave=slaveid)  # CT ratio
+            block7 = mb_read(600, count=2, slave=slaveid)  # CT ratio
             if block7.isError():
                 print("Error reading RMU CT ratio registers")
                 return
                 
-            block8 = modbusclient.read_holding_registers(911, count=2, slave=slaveid)  # Serial number
+            block8 = mb_read(911, count=2, slave=slaveid)  # Serial number
             if block8.isError():
                 print("Error reading RMU serial number")
                 return
                 
-            block9 = modbusclient.read_holding_registers(394, count=2, slave=slaveid)  # Operating hours
+            block9 = mb_read(394, count=2, slave=slaveid)  # Operating hours
             if block9.isError():
                 print("Error reading RMU operating hours")
                 return
@@ -608,7 +643,8 @@ def publishPowerlog(client):
             # Energy values and power factor
             consumed_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[68], main_registers.registers[69]))[0]
             delivered_energy = struct.unpack('>f', struct.pack('>HH', main_registers.registers[76], main_registers.registers[77]))[0]
-            power_factor = active_power/apparent_power/10
+            # Guard against zero load: apparent_power == 0 would raise ZeroDivisionError
+            power_factor = (active_power / apparent_power / 10) if apparent_power else 0
             sector_power_factor = 0  # May not be available
             ct_ratio = block7.registers[0]  # Use primary CT ratio
             
@@ -624,45 +660,55 @@ def publishPowerlog(client):
         else:
             return
         
-        # Update min, max, and sum for each value for aggregation
-        voltage_l1_min = min(voltage_l1_min, voltage_l1)
-        voltage_l1_max = max(voltage_l1_max, voltage_l1)
-        voltage_l1_sum += voltage_l1
-        
-        voltage_l2_min = min(voltage_l2_min, voltage_l2)
-        voltage_l2_max = max(voltage_l2_max, voltage_l2)
-        voltage_l2_sum += voltage_l2
-        
-        voltage_l3_min = min(voltage_l3_min, voltage_l3)
-        voltage_l3_max = max(voltage_l3_max, voltage_l3)
-        voltage_l3_sum += voltage_l3
-        
-        current_l1_min = min(current_l1_min, current_l1)
-        current_l1_max = max(current_l1_max, current_l1)
-        current_l1_sum += current_l1
-        
-        current_l2_min = min(current_l2_min, current_l2)
-        current_l2_max = max(current_l2_max, current_l2)
-        current_l2_sum += current_l2
-        
-        current_l3_min = min(current_l3_min, current_l3)
-        current_l3_max = max(current_l3_max, current_l3)
-        current_l3_sum += current_l3
-        
-        sample_count += 1
-        
-        # Calculate aggregated values
-        if sample_count > 0:
-            voltage_l1_avg = voltage_l1_sum / sample_count
-            voltage_l2_avg = voltage_l2_sum / sample_count
-            voltage_l3_avg = voltage_l3_sum / sample_count
-            current_l1_avg = current_l1_sum / sample_count
-            current_l2_avg = current_l2_sum / sample_count
-            current_l3_avg = current_l3_sum / sample_count
-        else:
-            voltage_l1_avg = voltage_l2_avg = voltage_l3_avg = 0
-            current_l1_avg = current_l2_avg = current_l3_avg = 0
-        
+        # Fold this synchronous sample into the aggregation window, snapshot it into
+        # locals and reset it, all under agg_lock so the 2 Hz polling thread cannot
+        # add samples between the snapshot and the reset (which would lose data).
+        with agg_lock:
+            voltage_l1_min = min(voltage_l1_min, voltage_l1)
+            voltage_l1_max = max(voltage_l1_max, voltage_l1)
+            voltage_l1_sum += voltage_l1
+            voltage_l2_min = min(voltage_l2_min, voltage_l2)
+            voltage_l2_max = max(voltage_l2_max, voltage_l2)
+            voltage_l2_sum += voltage_l2
+            voltage_l3_min = min(voltage_l3_min, voltage_l3)
+            voltage_l3_max = max(voltage_l3_max, voltage_l3)
+            voltage_l3_sum += voltage_l3
+            current_l1_min = min(current_l1_min, current_l1)
+            current_l1_max = max(current_l1_max, current_l1)
+            current_l1_sum += current_l1
+            current_l2_min = min(current_l2_min, current_l2)
+            current_l2_max = max(current_l2_max, current_l2)
+            current_l2_sum += current_l2
+            current_l3_min = min(current_l3_min, current_l3)
+            current_l3_max = max(current_l3_max, current_l3)
+            current_l3_sum += current_l3
+            sample_count += 1
+
+            # Snapshot the window into locals so the rest runs outside the lock
+            snap_count = sample_count
+            n = snap_count if snap_count > 0 else 1
+            v1_min = voltage_l1_min if voltage_l1_min != float('inf') else 0
+            v1_max = voltage_l1_max if voltage_l1_max != float('-inf') else 0
+            v1_avg = voltage_l1_sum / n
+            v2_min = voltage_l2_min if voltage_l2_min != float('inf') else 0
+            v2_max = voltage_l2_max if voltage_l2_max != float('-inf') else 0
+            v2_avg = voltage_l2_sum / n
+            v3_min = voltage_l3_min if voltage_l3_min != float('inf') else 0
+            v3_max = voltage_l3_max if voltage_l3_max != float('-inf') else 0
+            v3_avg = voltage_l3_sum / n
+            c1_min = current_l1_min if current_l1_min != float('inf') else 0
+            c1_max = current_l1_max if current_l1_max != float('-inf') else 0
+            c1_avg = current_l1_sum / n
+            c2_min = current_l2_min if current_l2_min != float('inf') else 0
+            c2_max = current_l2_max if current_l2_max != float('-inf') else 0
+            c2_avg = current_l2_sum / n
+            c3_min = current_l3_min if current_l3_min != float('inf') else 0
+            c3_max = current_l3_max if current_l3_max != float('-inf') else 0
+            c3_avg = current_l3_sum / n
+
+            # Reset the window now that it's safely captured
+            reset_aggregation()
+
         # Initialize binary data buffer
         binary_data = bytearray()
         
@@ -754,63 +800,71 @@ def publishPowerlog(client):
         for reg in registers:
             binary_data.extend(struct.pack('>H', reg & 0xFFFF))
         
-        # Add aggregated values (19 values, 4 bytes each)
+        # Add aggregated values (19 values, 4 bytes each) from the locked snapshot
         aggregated_values = [
-            int(voltage_l1_min * 1000) if voltage_l1_min != float('inf') else 0,
-            int(voltage_l1_max * 1000) if voltage_l1_max != float('-inf') else 0,
-            int(voltage_l1_avg * 1000),
-            int(voltage_l2_min * 1000) if voltage_l2_min != float('inf') else 0,
-            int(voltage_l2_max * 1000) if voltage_l2_max != float('-inf') else 0,
-            int(voltage_l2_avg * 1000),
-            int(voltage_l3_min * 1000) if voltage_l3_min != float('inf') else 0,
-            int(voltage_l3_max * 1000) if voltage_l3_max != float('-inf') else 0,
-            int(voltage_l3_avg * 1000),
-            int(current_l1_min * 1000) if current_l1_min != float('inf') else 0,
-            int(current_l1_max * 1000) if current_l1_max != float('-inf') else 0,
-            int(current_l1_avg * 1000),
-            int(current_l2_min * 1000) if current_l2_min != float('inf') else 0,
-            int(current_l2_max * 1000) if current_l2_max != float('-inf') else 0,
-            int(current_l2_avg * 1000),
-            int(current_l3_min * 1000) if current_l3_min != float('inf') else 0,
-            int(current_l3_max * 1000) if current_l3_max != float('-inf') else 0,
-            int(current_l3_avg * 1000),
-            sample_count
+            int(v1_min * 1000),
+            int(v1_max * 1000),
+            int(v1_avg * 1000),
+            int(v2_min * 1000),
+            int(v2_max * 1000),
+            int(v2_avg * 1000),
+            int(v3_min * 1000),
+            int(v3_max * 1000),
+            int(v3_avg * 1000),
+            int(c1_min * 1000),
+            int(c1_max * 1000),
+            int(c1_avg * 1000),
+            int(c2_min * 1000),
+            int(c2_max * 1000),
+            int(c2_avg * 1000),
+            int(c3_min * 1000),
+            int(c3_max * 1000),
+            int(c3_avg * 1000),
+            snap_count
         ]
-        
+
         for value in aggregated_values:
             binary_data.extend(struct.pack('>I', value & 0xffffffff))
-        
+
         print(f"Binary data size: {len(binary_data)} bytes")
         result = client.publish(topicPower, binary_data, qos=1)
         status = result[0]
         if status != 0:
             print(f'Failed to send message to topic {topicPower}')
-            
-        # Reset aggregation after sending
-        reset_aggregation()
-        
+
     except Exception as e:
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
 
 def publishModemlog(client):
     global routerSerial
     try:
-        rssiData = ''.join('{:02x}'.format(b) for b in tcpClient.read_holding_registers(4, count=1).registers)
+        # Read all modem registers under a single TCP lock/connection. The previous
+        # version closed the socket between reads, which made every read after the
+        # first fail intermittently.
+        with tcp_lock:
+            if not tcpClient.connect():
+                logMQTT(client, topicLog, "Modem TCP connect failed for modem log")
+                return
+            rssiBlock = tcpClient.read_holding_registers(4, count=1)
+            imsiData = tcpClient.read_holding_registers(348, count=8)
+            wanipData = tcpClient.read_holding_registers(139, count=2)  # WAN IP address registers
+
+        if rssiBlock.isError() or imsiData.isError() or wanipData.isError():
+            logMQTT(client, topicLog, "Error reading modem registers over TCP")
+            return
+
+        rssiData = ''.join('{:02x}'.format(b) for b in rssiBlock.registers)
         rssi = int(rssiData, 16) - 0x10000 if int(rssiData, 16) > 0x7FFF else int(rssiData, 16)
-        tcpClient.close()
-        imsiData = tcpClient.read_holding_registers(348,count=8)
         imsi = bytes.fromhex(''.join('{:02x}'.format(b) for b in imsiData.registers))[:-1].decode("ASCII")
-        tcpClient.close()
-        wanipData = tcpClient.read_holding_registers(139,count=2)  # WAN IP address registers   
-        wanipint = (wanipData.registers[0] << 16) | wanipData.registers[1] 
+        wanipint = (wanipData.registers[0] << 16) | wanipData.registers[1]
         wanip = '.'.join(str((wanipint >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
-        tcpClient.close()
+
         # Convert to a dotted quad IP string
         message = {
             "timestamp": time.time(),
-            "modemSerial": int(routerSerial),
+            "modemSerial": int(routerSerial) if routerSerial.isdigit() else routerSerial,
             "RSSI": rssi,
-            "IMSI": int(imsi),  # Add the full IMSI as a readable string
+            "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
             "FW": "1.0.2"
         }
@@ -819,7 +873,7 @@ def publishModemlog(client):
         if not status == 0:
             print(f'Failed to send message to topic {topicModem}')
     except Exception as e:
-        logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
+        logMQTT(client, topicLog, f"Modem log error - Check wiring or modem TCP link: {str(e)}")
 
 def voltage_current_polling():
     global polling_active
@@ -880,20 +934,38 @@ topicReset = None
 topicConfig = None
 topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
-# Initialize MQTT client after all functions are defined
-client = mqtt_client.Client(client_id=client_id, clean_session=False, callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
-client.username_pw_set(USERNAME, PASSWORD)
-client.on_connect = on_connect
-client.on_message = on_message
-client.on_disconnect = on_disconnect
+def setup_mqtt():
+    """Create, configure and connect the MQTT client.
 
-# Connect to MQTT broker
-client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
-client.loop_start()
+    Called from __main__ AFTER the router serial is known so we can use a stable
+    client_id (required for clean_session=False to actually resume a session) and
+    register the Last Will BEFORE connecting (a will set after connect is ignored).
+    """
+    global client, client_id
+    # Stable id per device so the broker resumes the persistent session on reboot
+    # instead of leaking a fresh orphaned session (with un-deliverable queued msgs)
+    # on every restart.
+    if routerSerial and routerSerial != "0000000000000000":
+        client_id = f"powerlogger-{routerSerial}"
+    else:
+        client_id = f"powerlogger-{uuid.uuid4()}"
+
+    client = mqtt_client.Client(client_id=client_id, clean_session=False, callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
+    client.username_pw_set(USERNAME, PASSWORD)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.on_disconnect = on_disconnect
+    # Let paho handle automatic reconnects with backoff from the network loop.
+    client.reconnect_delay_set(min_delay=1, max_delay=60)
+    # Register the Last Will BEFORE connecting so the broker announces unexpected drops.
+    client.will_set(topicLog, json.dumps({"timestamp": time.time(), "routerSerial": routerSerial, "log": "Disconnected"}), retain=True)
+
+    client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
+    client.loop_start()
 
 def emdx_check_serialnumber(slaveid):
     try:
-        emdx_serialnumber = modbusclient.read_holding_registers(int(0x2213), count=1, slave=slaveid)
+        emdx_serialnumber = mb_read(int(0x2213), count=1, slave=slaveid)
         if emdx_serialnumber.isError():
             print(f"No EMDX slave found at address {slaveid}")
             return False
@@ -909,7 +981,7 @@ def rmu_check_serialnumber(slaveid=49):
         rmu_slaveid = 49
         
         # Read 2 registers for the serial number (spans 2 registers)
-        rmu_serialnumber = modbusclient.read_holding_registers(911, count=2, slave=rmu_slaveid)
+        rmu_serialnumber = mb_read(911, count=2, slave=rmu_slaveid)
         if rmu_serialnumber.isError():
             print(f"No RMU slave found at address {rmu_slaveid}")
             return False
@@ -934,14 +1006,14 @@ def rmu_update_ct_settings(primary=400, secondary=1):
     
     # Update Primary CT setting (register 600)
     print(f"Writing Primary CT setting: {primary}A")
-    primary_result = modbusclient.write_registers(address=600, values=[primary], slave=49)
+    primary_result = mb_write(address=600, values=[primary], slave=49)
     if primary_result.isError():
         print(f"Error updating Primary CT setting: {primary_result}")
         return False
     
     # Update Secondary CT setting (register 601)
     print(f"Writing Secondary CT setting: {secondary}A")
-    secondary_result = modbusclient.write_registers(address=601, values=[secondary], slave=49)
+    secondary_result = mb_write(address=601, values=[secondary], slave=49)
     if secondary_result.isError():
         print(f"Error updating Secondary CT setting: {secondary_result}")
         return False
@@ -950,7 +1022,7 @@ def rmu_update_ct_settings(primary=400, secondary=1):
     print("\nVerifying CT settings:")
     
     # Read Primary CT setting
-    primary_read = modbusclient.read_holding_registers(address=600, count=1, slave=49)
+    primary_read = mb_read(address=600, count=1, slave=49)
     if primary_read.isError():
         print(f"Error reading Primary CT setting: {primary_read}")
         return False
@@ -958,7 +1030,7 @@ def rmu_update_ct_settings(primary=400, secondary=1):
     print(f"Primary CT setting: {primary_value}A (expected: {primary}A)")
     
     # Read Secondary CT setting
-    secondary_read = modbusclient.read_holding_registers(address=601, count=1, slave=49)
+    secondary_read = mb_read(address=601, count=1, slave=49)
     if secondary_read.isError():
         print(f"Error reading Secondary CT setting: {secondary_read}")
         return False
@@ -982,6 +1054,10 @@ if __name__ == "__main__":
         print(f"Router serial obtained: {routerSerial}")
     else:
         print("Could not get router serial at startup, will retry later")
+
+    # Set up MQTT now that the serial is known: stable client_id + Last Will before
+    # connecting. Must happen before anything calls logMQTT()/client.
+    setup_mqtt()
 
     # Now connect to Modbus
     modbusConnect(modbusclient)
