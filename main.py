@@ -826,7 +826,19 @@ def publishPowerlog(client):
         for value in aggregated_values:
             binary_data.extend(struct.pack('>I', value & 0xffffffff))
 
+        # Append the router (modem) serial so the backend/UI can link this
+        # powerlogger to its modem while everyone keeps publishing to the same
+        # flat topic. Placed at the very END as an 8-byte big-endian uint64 so the
+        # existing JS parser (which reads fixed offsets from the start) stays
+        # compatible; the new parser reads these trailing 8 bytes as routerSerial.
+        try:
+            router_serial_int = int(routerSerial)
+        except (ValueError, TypeError):
+            router_serial_int = 0
+        binary_data.extend(struct.pack('>Q', router_serial_int & 0xFFFFFFFFFFFFFFFF))
+
         print(f"Binary data size: {len(binary_data)} bytes")
+        topicPower = f"{topicPowerBase}/{device_serial}/data"
         result = client.publish(topicPower, binary_data, qos=1)
         status = result[0]
         if status != 0:
@@ -868,6 +880,7 @@ def publishModemlog(client):
             "IP": wanip,
             "FW": "1.0.2"
         }
+        topicModem = f"{topicModemBase}/{routerSerial}/data"
         result = client.publish(topicModem, json.dumps(message))
         status = result[0]
         if not status == 0:
@@ -927,8 +940,13 @@ BROKER = credentials["broker"]
 PORT = credentials["port"]
 USERNAME = credentials["username"]
 PASSWORD = credentials["password"]
-topicPower = "ET/powerlogger/data"
-topicModem = "ET/modemlogger/data"
+# Per-device data topics are built at publish time:
+#   power:  ET/powerlogger/{device_serial}/data   (keyed on the METER serial)
+#   modem:  ET/modemlogger/{routerSerial}/data    (keyed on the MODEM/router serial)
+# The routerSerial is also carried inside the power payload so the UI can link a
+# powerlogger to its modem.
+topicPowerBase = "ET/powerlogger"
+topicModemBase = "ET/modemlogger"
 # These topics will be properly defined after getting routerSerial
 topicReset = None
 topicConfig = None
