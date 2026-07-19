@@ -51,6 +51,11 @@ topicReset = None
 topicConfig = None
 topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
+# --- Connection watchdog settings ---
+WATCHDOG_CHECK_INTERVAL = 10     # how often the watchdog checks the MQTT state (s)
+WATCHDOG_TOGGLE_INTERVAL = 300   # toggle mobile data every 5 minutes while disconnected
+DATA_TOGGLE_OFF_TIME = 5         # seconds to keep mobile data off during a toggle
+
 # Variables for voltage and current aggregation
 voltage_l1_min = float('inf')
 voltage_l1_max = float('-inf')
@@ -309,6 +314,72 @@ def rebootModem():
     else:
         logMQTT(client, topicLog, "Rebooting modem...")
 
+def toggleConnection():
+    """Toggle mobile data off/on via Modbus TCP register 204.
+
+    Forces the modem to tear down and rebuild its PDP context / registration
+    without rebooting the whole device (register 206), so the Python process,
+    the paho message queue and the aggregation window all stay alive.
+    Called by the connection watchdog and manually via the reset topic with
+    payload "connection".
+    """
+    # Log first: if the connection is half-alive this may still reach the broker;
+    # once data is toggled off it certainly won't.
+    logMQTT(client, topicLog, "Toggling mobile data connection (register 204: off -> on)")
+    try:
+        with tcp_lock:
+            if not tcpClient.connect():
+                print("Connection toggle failed: Modbus TCP connect failed")
+                return False
+            tcpClient.write_register(204, 0)   # mobile data OFF
+        # Sleep OUTSIDE tcp_lock so the modemLoop is not blocked meanwhile.
+        time.sleep(DATA_TOGGLE_OFF_TIME)       # let the PDP context tear down
+        with tcp_lock:
+            if not tcpClient.connect():
+                print("Connection toggle: reconnect for data-ON write failed")
+                return False
+            tcpClient.write_register(204, 1)   # mobile data ON
+        print("Mobile data toggled (204: 0 -> 1)")
+        return True
+    except Exception as e:
+        print(f"Connection toggle failed: {e}")
+        return False
+
+def connectionWatchdog():
+    """Monitor the MQTT connection; while it is down, toggle mobile data
+    (register 204) every WATCHDOG_TOGGLE_INTERVAL seconds.
+
+    Runs as a daemon thread. The first toggle happens WATCHDOG_TOGGLE_INTERVAL
+    after the disconnect is first observed, so short hiccups that paho recovers
+    by itself never trigger a toggle.
+    """
+    disconnect_since = None
+    last_toggle = 0
+    while True:
+        time.sleep(WATCHDOG_CHECK_INTERVAL)
+        try:
+            if client is not None and client.is_connected():
+                if disconnect_since is not None:
+                    print(f"Watchdog: MQTT connection restored after {int(time.time() - disconnect_since)}s")
+                disconnect_since = None
+                continue
+
+            now = time.time()
+            if disconnect_since is None:
+                # First moment we see the connection down: start the clock,
+                # don't toggle yet - give paho's own reconnect a chance first.
+                disconnect_since = now
+                last_toggle = now
+                print("Watchdog: MQTT connection lost, monitoring...")
+                continue
+
+            if now - last_toggle >= WATCHDOG_TOGGLE_INTERVAL:
+                last_toggle = now
+                print(f"Watchdog: no MQTT connection for {int(now - disconnect_since)}s - toggling mobile data")
+                toggleConnection()
+        except Exception as e:
+            print(f"Watchdog error: {e}")
+
 sendInterval = 10
 
 def on_message(client, userdata, msg):
@@ -320,6 +391,11 @@ def on_message(client, userdata, msg):
         print(f"Reset action requested: {payload}")
         if payload == 'modem':
             rebootModem()
+        elif payload == 'connection':
+            # Manual trigger for remote testing. Run in a separate thread:
+            # toggleConnection() sleeps ~5s and this callback runs on paho's
+            # network-loop thread, which must not be blocked.
+            threading.Thread(target=toggleConnection, daemon=True).start()
         else:
             print(f'Unknown reset command: {payload}')
             
@@ -878,7 +954,7 @@ def publishModemlog(client):
             "RSSI": rssi,
             "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
-            "FW": "1.0.2"
+            "FW": "1.0.3"
         }
         topicModem = f"{topicModemBase}/{routerSerial}/data"
         result = client.publish(topicModem, json.dumps(message))
@@ -1077,6 +1153,12 @@ if __name__ == "__main__":
     # connecting. Must happen before anything calls logMQTT()/client.
     setup_mqtt()
 
+    # Start the connection watchdog now that the MQTT client exists: while the
+    # broker is unreachable it toggles mobile data (register 204) every 5 minutes
+    # instead of rebooting the whole device.
+    thread_watchdog = threading.Thread(target=connectionWatchdog, daemon=True)
+    thread_watchdog.start()
+
     # Now connect to Modbus
     modbusConnect(modbusclient)
 
@@ -1139,4 +1221,3 @@ if __name__ == "__main__":
 
     while True:
         time.sleep(10)
-        
