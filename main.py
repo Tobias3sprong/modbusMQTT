@@ -54,7 +54,7 @@ topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 # --- Connection watchdog settings ---
 WATCHDOG_CHECK_INTERVAL = 10     # how often the watchdog checks the MQTT state (s)
 WATCHDOG_TOGGLE_INTERVAL = 300   # toggle mobile data every 5 minutes while disconnected
-DATA_TOGGLE_OFF_TIME = 5         # seconds to keep mobile data off during a toggle
+DATA_TOGGLE_OFF_TIME = 20         # seconds to keep mobile data off during a toggle
 
 # Variables for voltage and current aggregation
 voltage_l1_min = float('inf')
