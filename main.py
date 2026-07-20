@@ -34,11 +34,34 @@ tcpClient = ModbusTcpClient(
 modbus_lock = threading.Lock()  # protects the RTU client (modbusclient)
 tcp_lock = threading.Lock()     # protects the TCP client (tcpClient)
 agg_lock = threading.Lock()     # protects the voltage/current aggregation state
+stats_lock = threading.Lock()   # protects modbus_error_count
+
+# Cumulative count of failed Modbus RTU reads since script start. Sent along in
+# every modemlog message so RS485 health is visible in the database without a
+# site visit: a rising delta between modemlogs = read failures in that window
+# (EMI, wiring, termination). Cumulative on purpose - no reset race, and the
+# per-interval delta is trivially computed backend-side.
+modbus_error_count = 0
+
+def count_modbus_error():
+    global modbus_error_count
+    with stats_lock:
+        modbus_error_count += 1
 
 def mb_read(*args, **kwargs):
-    """Thread-safe read on the RTU client."""
+    """Thread-safe read on the RTU client.
+
+    Centrally counts every failed read: the error branches after each mb_read
+    call only print() and return, which is invisible remotely - this counter
+    is what makes those silent skips show up in the modemlog."""
     with modbus_lock:
-        return modbusclient.read_holding_registers(*args, **kwargs)
+        result = modbusclient.read_holding_registers(*args, **kwargs)
+    try:
+        if result.isError():
+            count_modbus_error()
+    except Exception:
+        pass
+    return result
 
 def mb_write(*args, **kwargs):
     """Thread-safe write on the RTU client."""
@@ -651,6 +674,7 @@ def poll_voltage_and_current(slaveid=1):
             sample_count += 1
 
     except Exception as e:
+        count_modbus_error()
         print(f"Error polling voltage and current: {e}")
 
 def reset_aggregation():
@@ -1048,6 +1072,7 @@ def publishPowerlog(client):
             print(f'Failed to send message to topic {topicPower}')
 
     except Exception as e:
+        count_modbus_error()
         logMQTT(client, topicLog, f"Modbus connection error - Check wiring or modbus slave: {str(e)}")
 
 def publishModemlog(client):
@@ -1074,6 +1099,9 @@ def publishModemlog(client):
         wanipint = (wanipData.registers[0] << 16) | wanipData.registers[1]
         wanip = '.'.join(str((wanipint >> (8 * i)) & 0xFF) for i in range(3, -1, -1))
 
+        with stats_lock:
+            mb_errors = modbus_error_count
+
         # Convert to a dotted quad IP string
         message = {
             "timestamp": time.time(),
@@ -1081,7 +1109,8 @@ def publishModemlog(client):
             "RSSI": rssi,
             "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
-            "FW": "1.0.4"
+            "modbusErrors": mb_errors,  # cumulative failed RTU reads since script start
+            "FW": "1.0.5"
         }
         topicModem = f"{topicModemBase}/{routerSerial}/data"
         # qos=1 so modem/RSSI history around an outage is queued and delivered
