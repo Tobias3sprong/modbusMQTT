@@ -53,8 +53,11 @@ topicLog = "ET/modemlogger/log"  # Temporary log topic until we get the serial
 
 # --- Connection watchdog settings ---
 WATCHDOG_CHECK_INTERVAL = 10     # how often the watchdog checks the MQTT state (s)
-WATCHDOG_TOGGLE_INTERVAL = 300   # toggle mobile data every 5 minutes while disconnected
-DATA_TOGGLE_OFF_TIME = 20         # seconds to keep mobile data off during a toggle
+WATCHDOG_TOGGLE_INTERVAL = 300   # recovery action every 5 minutes while disconnected
+DATA_TOGGLE_OFF_TIME = 20        # seconds to keep mobile data off during a toggle
+MAX_QUEUED_MESSAGES = 5000       # cap paho's in-memory QoS1 queue (~14h of powerlogs
+                                 # at 10s interval) so a multi-day outage can't grow
+                                 # it until the OOM killer takes the process down
 
 # Variables for voltage and current aggregation
 voltage_l1_min = float('inf')
@@ -288,20 +291,37 @@ def logMQTT(client, topic, logMessage):
         except Exception as e:
             print(f'Error publishing log message: {str(e)}')
 
-def on_connect(client, userdata, flags, rc, properties=None):
-    if rc == 0 and client.is_connected():
-        # Only subscribe if topics are properly defined
-        if topicReset and topicConfig:
-            client.subscribe(topicReset)
-            client.subscribe(topicConfig)
-            print(f"Subscribed to {topicReset} and {topicConfig}")
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    # Callbacks run ON paho's network-loop thread. An uncaught exception here
+    # kills that thread: no more publishing, no keepalive, no reconnect - while
+    # the rest of the script keeps running. This is exactly the silent-death
+    # failure reproduced in the field (TypeError in on_disconnect). Never let
+    # an exception escape a callback.
+    try:
+        if client.is_connected():
+            # Only subscribe if topics are properly defined
+            if topicReset and topicConfig:
+                client.subscribe(topicReset)
+                client.subscribe(topicConfig)
+                print(f"Subscribed to {topicReset} and {topicConfig}")
+    except Exception as e:
+        print(f"on_connect error: {e}")
 
-def on_disconnect(client, userdata, rc, properties=None):
-    # Do NOT call client.reconnect() here: this runs on paho's network-loop thread
-    # and can deadlock. loop_start() + reconnect_delay_set() reconnect automatically.
-    print(f"MQTT disconnected with result code: {rc}")
-    if rc != 0:
-        print("Unexpected disconnection. paho will reconnect automatically...")
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties=None):
+    # FIX (field-reproduced bug): with CallbackAPIVersion.VERSION2 (paho >= 2.0)
+    # this callback is invoked with FIVE positional arguments:
+    #   (client, userdata, disconnect_flags, reason_code, properties)
+    # The previous four-argument signature raised a TypeError on the first real
+    # disconnect, which killed paho's network-loop thread and permanently
+    # stopped all MQTT traffic while the rest of the script kept running.
+    #
+    # Do NOT call client.reconnect() here: this runs on paho's network-loop
+    # thread and can deadlock. loop_start() + reconnect_delay_set() reconnect
+    # automatically.
+    try:
+        print(f"MQTT disconnected, reason: {reason_code}")
+    except Exception as e:
+        print(f"on_disconnect error: {e}")
 #end of mqtt functions
 
 #functions for modem
@@ -322,95 +342,202 @@ def toggleConnection():
     the paho message queue and the aggregation window all stay alive.
     Called by the connection watchdog and manually via the reset topic with
     payload "connection".
+
+    FAIL-SAFE: the data-ON write (204 -> 1) runs in a finally block with
+    retries. The 204 setting is persistent on Teltonika devices, so a toggle
+    that strands halfway (data off, never back on) would leave the unit
+    permanently offline until someone physically reaches it. If even the
+    retries fail, a full device reboot (206) is the last resort: it restores
+    connectivity paths, which beats staying dark with data off.
     """
     # Log first: if the connection is half-alive this may still reach the broker;
     # once data is toggled off it certainly won't.
     logMQTT(client, topicLog, "Toggling mobile data connection (register 204: off -> on)")
+    data_off_written = False
     try:
         with tcp_lock:
             if not tcpClient.connect():
                 print("Connection toggle failed: Modbus TCP connect failed")
                 return False
             tcpClient.write_register(204, 0)   # mobile data OFF
+        data_off_written = True
         # Sleep OUTSIDE tcp_lock so the modemLoop is not blocked meanwhile.
         time.sleep(DATA_TOGGLE_OFF_TIME)       # let the PDP context tear down
-        with tcp_lock:
-            if not tcpClient.connect():
-                print("Connection toggle: reconnect for data-ON write failed")
-                return False
-            tcpClient.write_register(204, 1)   # mobile data ON
-        print("Mobile data toggled (204: 0 -> 1)")
         return True
     except Exception as e:
         print(f"Connection toggle failed: {e}")
         return False
+    finally:
+        # Guarantee data goes back ON if we managed to switch it off,
+        # whatever happened in between. Retry a few times before giving up.
+        if data_off_written:
+            for attempt in range(1, 6):
+                try:
+                    with tcp_lock:
+                        if tcpClient.connect():
+                            tcpClient.write_register(204, 1)   # mobile data ON
+                            print(f"Mobile data re-enabled (attempt {attempt})")
+                            break
+                        else:
+                            print(f"Data-ON write: Modbus TCP connect failed (attempt {attempt})")
+                except Exception as e:
+                    print(f"Data-ON write failed (attempt {attempt}): {e}")
+                time.sleep(2)
+            else:
+                print("Could not re-enable mobile data after retries - rebooting device")
+                rebootModem()
+
+def rebuild_mqtt_client():
+    """Tear down the (possibly dead) MQTT client and build a fresh one.
+
+    Covers the failure mode a modem toggle cannot fix: a dead or wedged paho
+    network-loop thread means no publishing, no keepalive and no reconnect,
+    while the rest of the process keeps running (the field-reproduced
+    silent-death scenario). Rebuilding the client restarts that thread from
+    scratch.
+
+    NOTE: messages still queued inside the old client object are lost - the
+    queue lives in the client instance. That is why the watchdog only calls
+    this when mqtt_thread_alive() says the network thread is actually dead:
+    a dead thread would never deliver that queue anyway, so nothing of value
+    is lost. While the thread is alive (e.g. a long congestion outage), the
+    watchdog sticks to modem toggles and the queue stays intact for delivery
+    after reconnect.
+    """
+    global client
+    print("Rebuilding MQTT client...")
+    old_client = client
+    try:
+        old_client.loop_stop()
+    except Exception as e:
+        print(f"loop_stop on old client failed: {e}")
+    try:
+        old_client.disconnect()
+    except Exception as e:
+        print(f"disconnect on old client failed: {e}")
+    try:
+        setup_mqtt()
+        print("MQTT client rebuilt")
+        return True
+    except Exception as e:
+        print(f"MQTT client rebuild failed: {e}")
+        return False
+
+def mqtt_thread_alive():
+    """Return True if paho's network-loop thread is running.
+
+    Same check as `ls /proc/<pid>/task` in the field: a dead network thread
+    means no publishing, no keepalive and no reconnect while everything else
+    keeps running. client._thread is a private paho attribute - fine on the
+    pinned paho 2.1.0, but re-verify on any future paho upgrade. If the
+    attribute ever disappears, the except-path reports the thread as alive,
+    so the watchdog falls back to toggles only and never rebuilds needlessly
+    (fail-safe direction: a wrongly skipped rebuild costs recovery speed,
+    a wrong rebuild costs the queued data).
+    """
+    try:
+        return client is not None and client._thread is not None and client._thread.is_alive()
+    except Exception:
+        return True
 
 def connectionWatchdog():
-    """Monitor the MQTT connection; while it is down, toggle mobile data
-    (register 204) every WATCHDOG_TOGGLE_INTERVAL seconds.
+    """Monitor the MQTT connection; while it is down, run a recovery action
+    every WATCHDOG_TOGGLE_INTERVAL seconds.
 
-    Runs as a daemon thread. The first toggle happens WATCHDOG_TOGGLE_INTERVAL
+    The recovery action is chosen by diagnosis, not by a fixed ladder:
+      - paho network thread DEAD  -> rebuild the MQTT client immediately.
+        Nothing in the old queue would ever be delivered by a dead thread,
+        so nothing of value is lost, and recovery is fastest this way.
+        (This is the field-reproduced silent-death bug class.)
+      - thread ALIVE, network down -> toggle mobile data (register 204).
+        The client is healthy and its QoS1 queue is filling up nicely; a
+        rebuild would throw that buffer away for nothing. Toggles preserve
+        the queue, and after reconnect the backlog is delivered with the
+        original measurement timestamps.
+
+    Runs as a daemon thread. The first action happens WATCHDOG_TOGGLE_INTERVAL
     after the disconnect is first observed, so short hiccups that paho recovers
-    by itself never trigger a toggle.
+    by itself never trigger anything. The thread check runs every cycle, so a
+    thread that dies mid-outage is caught at the next action moment.
     """
     disconnect_since = None
-    last_toggle = 0
+    last_action = 0
+    attempt = 0
     while True:
         time.sleep(WATCHDOG_CHECK_INTERVAL)
         try:
             if client is not None and client.is_connected():
                 if disconnect_since is not None:
-                    print(f"Watchdog: MQTT connection restored after {int(time.time() - disconnect_since)}s")
+                    print(f"Watchdog: MQTT connection restored after {int(time.time() - disconnect_since)}s and {attempt} recovery attempt(s)")
                 disconnect_since = None
+                attempt = 0
                 continue
 
             now = time.time()
             if disconnect_since is None:
-                # First moment we see the connection down: start the clock,
-                # don't toggle yet - give paho's own reconnect a chance first.
                 disconnect_since = now
-                last_toggle = now
-                print("Watchdog: MQTT connection lost, monitoring...")
+                last_action = now
+                if not mqtt_thread_alive():
+                    # A dead thread can never recover by itself, so there is
+                    # nothing to wait for: rebuild immediately.
+                    print("Watchdog: MQTT connection lost and network thread is DEAD - rebuilding MQTT client immediately")
+                    rebuild_mqtt_client()
+                else:
+                    # Thread alive: start the clock, don't act yet - give
+                    # paho's own reconnect a chance first.
+                    print("Watchdog: MQTT connection lost, monitoring...")
                 continue
 
-            if now - last_toggle >= WATCHDOG_TOGGLE_INTERVAL:
-                last_toggle = now
-                print(f"Watchdog: no MQTT connection for {int(now - disconnect_since)}s - toggling mobile data")
-                toggleConnection()
+            if now - last_action >= WATCHDOG_TOGGLE_INTERVAL:
+                last_action = now
+                attempt += 1
+                down_for = int(now - disconnect_since)
+                if not mqtt_thread_alive():
+                    print(f"Watchdog: paho network thread is DEAD after {down_for}s offline (attempt {attempt}) - rebuilding MQTT client")
+                    rebuild_mqtt_client()
+                else:
+                    print(f"Watchdog: no MQTT connection for {down_for}s, thread alive (attempt {attempt}) - toggling mobile data")
+                    toggleConnection()
         except Exception as e:
+            # The watchdog is the safety net - it must never die itself.
             print(f"Watchdog error: {e}")
 
 sendInterval = 10
 
 def on_message(client, userdata, msg):
     global sendInterval
-    print(f"Message received on topic: {msg.topic}")
-    
-    if msg.topic == topicReset:
-        payload = msg.payload.decode()
-        print(f"Reset action requested: {payload}")
-        if payload == 'modem':
-            rebootModem()
-        elif payload == 'connection':
-            # Manual trigger for remote testing. Run in a separate thread:
-            # toggleConnection() sleeps ~5s and this callback runs on paho's
-            # network-loop thread, which must not be blocked.
-            threading.Thread(target=toggleConnection, daemon=True).start()
-        else:
-            print(f'Unknown reset command: {payload}')
-            
-    elif msg.topic == topicConfig:
-        try:
+    # Same rule as the other callbacks: this runs on paho's network-loop
+    # thread, so an uncaught exception here would kill all MQTT traffic.
+    try:
+        print(f"Message received on topic: {msg.topic}")
+
+        if msg.topic == topicReset:
             payload = msg.payload.decode()
-            print(f"Config update received: {payload}")
-            config = json.loads(payload)
-            sendInterval = config["sendInterval"]
-            logMQTT(client, topicLog, f"Config updated - sendInterval set to {sendInterval}")
-        except Exception as error:
-            print(f"Error processing config message: {error}")
-            logMQTT(client, topicLog, f"Invalid config message: {str(error)}")
-    else:
-        print(f"Received message on unexpected topic: {msg.topic}")
+            print(f"Reset action requested: {payload}")
+            if payload == 'modem':
+                rebootModem()
+            elif payload == 'connection':
+                # Manual trigger for remote testing. Run in a separate thread:
+                # toggleConnection() sleeps and this callback runs on paho's
+                # network-loop thread, which must not be blocked.
+                threading.Thread(target=toggleConnection, daemon=True).start()
+            else:
+                print(f'Unknown reset command: {payload}')
+
+        elif msg.topic == topicConfig:
+            try:
+                payload = msg.payload.decode()
+                print(f"Config update received: {payload}")
+                config = json.loads(payload)
+                sendInterval = config["sendInterval"]
+                logMQTT(client, topicLog, f"Config updated - sendInterval set to {sendInterval}")
+            except Exception as error:
+                print(f"Error processing config message: {error}")
+                logMQTT(client, topicLog, f"Invalid config message: {str(error)}")
+        else:
+            print(f"Received message on unexpected topic: {msg.topic}")
+    except Exception as e:
+        print(f"on_message error: {e}")
 def scale_energy_by_ct_ratio(energy_value, ct_ratio):
     """
     Scale energy values based on CT ratio ranges:
@@ -954,10 +1081,12 @@ def publishModemlog(client):
             "RSSI": rssi,
             "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
-            "FW": "1.0.3"
+            "FW": "1.0.4"
         }
         topicModem = f"{topicModemBase}/{routerSerial}/data"
-        result = client.publish(topicModem, json.dumps(message))
+        # qos=1 so modem/RSSI history around an outage is queued and delivered
+        # after reconnect instead of silently dropped (qos=0 is fire-and-forget).
+        result = client.publish(topicModem, json.dumps(message), qos=1)
         status = result[0]
         if not status == 0:
             print(f'Failed to send message to topic {topicModem}')
@@ -1034,6 +1163,7 @@ def setup_mqtt():
     Called from __main__ AFTER the router serial is known so we can use a stable
     client_id (required for clean_session=False to actually resume a session) and
     register the Last Will BEFORE connecting (a will set after connect is ignored).
+    Also called by rebuild_mqtt_client() when the watchdog replaces a dead client.
     """
     global client, client_id
     # Stable id per device so the broker resumes the persistent session on reboot
@@ -1051,10 +1181,17 @@ def setup_mqtt():
     client.on_disconnect = on_disconnect
     # Let paho handle automatic reconnects with backoff from the network loop.
     client.reconnect_delay_set(min_delay=1, max_delay=60)
+    # Cap the in-memory QoS1 queue so a multi-day outage can't grow it until
+    # the OOM killer takes the whole process down (which would lose everything).
+    client.max_queued_messages_set(MAX_QUEUED_MESSAGES)
     # Register the Last Will BEFORE connecting so the broker announces unexpected drops.
     client.will_set(topicLog, json.dumps({"timestamp": time.time(), "routerSerial": routerSerial, "log": "Disconnected"}), retain=True)
 
-    client.connect(BROKER, PORT, keepalive=60)  # Increased keepalive for better stability
+    # keepalive=30: congestion drops are usually silent (no TCP RST), so paho
+    # only notices via the keepalive mechanism at ~1.5x the interval. 30s means
+    # detection in ~30-45s instead of 60-90s, so the watchdog clock starts
+    # sooner. The extra PINGREQ traffic is negligible.
+    client.connect(BROKER, PORT, keepalive=30)
     client.loop_start()
 
 def emdx_check_serialnumber(slaveid):
@@ -1154,8 +1291,8 @@ if __name__ == "__main__":
     setup_mqtt()
 
     # Start the connection watchdog now that the MQTT client exists: while the
-    # broker is unreachable it toggles mobile data (register 204) every 5 minutes
-    # instead of rebooting the whole device.
+    # broker is unreachable it alternates between toggling mobile data
+    # (register 204) and rebuilding the MQTT client, every 5 minutes.
     thread_watchdog = threading.Thread(target=connectionWatchdog, daemon=True)
     thread_watchdog.start()
 
