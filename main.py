@@ -3,6 +3,7 @@ import time
 import struct
 import random
 import threading
+from collections import deque
 from pymodbus.client.serial import ModbusSerialClient
 from pymodbus.client.tcp import ModbusTcpClient
 from paho.mqtt import client as mqtt_client
@@ -82,7 +83,70 @@ MAX_QUEUED_MESSAGES = 5000       # cap paho's in-memory QoS1 queue (~14h of powe
                                  # at 10s interval) so a multi-day outage can't grow
                                  # it until the OOM killer takes the process down
 
-# Variables for voltage and current aggregation
+# --- Powerlog retry queue -------------------------------------------------
+# A publish on a disconnected client returns rc=MQTT_ERR_NO_CONN and the message
+# is NOT queued by paho - it is simply rejected. That is the confirmed cause of
+# the gaps seen in the broker audit: measurements published during a short
+# connectivity dip never reach paho's inflight queue and are lost. QoS1 only
+# guarantees re-delivery of messages paho actually accepted.
+#
+# This second, application-level queue closes exactly that window: a rejected
+# publish is held here and retried at the start of every powerLoop cycle,
+# non-blocking (no wait_for_publish, no sleep). On success it is dropped; on
+# failure it stays for the next round. The measurement timestamp is baked into
+# the payload at build time, so a message delivered several cycles late still
+# carries its original time.
+#
+# maxlen bounds memory just like paho's own cap: on overflow the OLDEST entries
+# are dropped (deque behaviour), keeping the most recent measurements. Entries
+# are (topic, payload) tuples - the topic carries the per-message device_serial.
+RETRY_QUEUE_MAX = 5000           # ~14h at 10s interval; 158 bytes each -> trivial RAM
+retry_queue = deque(maxlen=RETRY_QUEUE_MAX)
+retry_lock = threading.Lock()
+
+def queue_failed_publish(topic, payload):
+    """Store a powerlog message whose publish was rejected, for later retry."""
+    with retry_lock:
+        retry_queue.append((topic, payload))
+        depth = len(retry_queue)
+    print(f"Publish rejected, queued for retry (queue depth: {depth})")
+
+def flush_retry_queue(client):
+    """Retry every held powerlog message once, non-blocking.
+
+    Runs at the start of each powerLoop cycle, before the new measurement, so
+    backlog is delivered in roughly chronological order ahead of fresh data.
+    Successful re-publishes are removed; failures are kept for the next round.
+    A message that fails is re-appended, so the queue naturally drains only as
+    fast as the connection allows without ever blocking the loop.
+    """
+    with retry_lock:
+        pending = len(retry_queue)
+    if not pending:
+        return
+    print(f"Flushing retry queue ({pending} message(s))...")
+    # Process at most the current depth: messages re-queued this round are left
+    # for the next cycle, so a persistently-down link can't spin here forever.
+    for _ in range(pending):
+        with retry_lock:
+            if not retry_queue:
+                break
+            topic, payload = retry_queue.popleft()
+        try:
+            result = client.publish(topic, payload, qos=1)
+            if result.rc != mqtt_client.MQTT_ERR_SUCCESS:
+                # Still no connection - put it back at the FRONT to preserve order.
+                with retry_lock:
+                    retry_queue.appendleft((topic, payload))
+                # No point hammering the rest this cycle if we're offline.
+                break
+        except Exception as e:
+            with retry_lock:
+                retry_queue.appendleft((topic, payload))
+            print(f"Retry flush error: {e}")
+            break
+
+
 voltage_l1_min = float('inf')
 voltage_l1_max = float('-inf')
 voltage_l1_sum = 0
@@ -1067,9 +1131,11 @@ def publishPowerlog(client):
         print(f"Binary data size: {len(binary_data)} bytes")
         topicPower = f"{topicPowerBase}/{device_serial}/data"
         result = client.publish(topicPower, binary_data, qos=1)
-        status = result[0]
-        if status != 0:
-            print(f'Failed to send message to topic {topicPower}')
+        if result.rc != mqtt_client.MQTT_ERR_SUCCESS:
+            # rc=MQTT_ERR_NO_CONN: paho did NOT queue this. Hold it ourselves and
+            # retry next cycle, so a short connectivity dip no longer loses the
+            # measurement (this is the audit-gap fix).
+            queue_failed_publish(topicPower, binary_data)
 
     except Exception as e:
         count_modbus_error()
@@ -1101,6 +1167,8 @@ def publishModemlog(client):
 
         with stats_lock:
             mb_errors = modbus_error_count
+        with retry_lock:
+            retry_depth = len(retry_queue)
 
         # Convert to a dotted quad IP string
         message = {
@@ -1110,7 +1178,8 @@ def publishModemlog(client):
             "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
             "modbusErrors": mb_errors,  # cumulative failed RTU reads since script start
-            "FW": "1.0.5"
+            "retryQueue": retry_depth,  # powerlog messages currently held for retry
+            "FW": "1.0.6"
         }
         topicModem = f"{topicModemBase}/{routerSerial}/data"
         # qos=1 so modem/RSSI history around an outage is queued and delivered
@@ -1142,6 +1211,10 @@ def powerLoop():
     
     while True:
         try:
+            # Retry any previously-rejected messages first, so backlog goes out
+            # ahead of the fresh measurement. Non-blocking: stops as soon as the
+            # link is down again.
+            flush_retry_queue(client)
             publishPowerlog(client)
         except Exception:
             modbusConnect(modbusclient)
