@@ -104,6 +104,114 @@ RETRY_QUEUE_MAX = 5000           # ~14h at 10s interval; 158 bytes each -> trivi
 retry_queue = deque(maxlen=RETRY_QUEUE_MAX)
 retry_lock = threading.Lock()
 
+# --- PUBACK tracking (the "soft rejection" fix) ---------------------------
+# Field data (7405: 209/761 rows missing while retry_queue stayed 0) proved the
+# rc check alone is NOT enough: in the window before paho detects a silently
+# dead connection, publish() returns MQTT_ERR_SUCCESS and hands the message to
+# paho's inflight queue - where it can still die if the reconnect goes wrong.
+# rc only says "accepted", never "delivered". The only proof of delivery for a
+# QoS1 message is the PUBACK, surfaced via the on_publish callback.
+#
+# Mechanism: every tracked publish registers its mid in pending_pubs together
+# with (topic, payload, time). on_publish removes it on confirmation. A sweep
+# each powerLoop cycle moves entries older than PENDING_TIMEOUT into the retry
+# queue - unconfirmed means presumed lost, so WE resend. If paho's own retry
+# delivers it after all, the resend becomes a duplicate, which the database
+# absorbs via the UNIQUE (deviceid, timestamp) constraint + ON CONFLICT DO
+# NOTHING. That constraint is a hard prerequisite for this design.
+PENDING_TIMEOUT = 30             # seconds without PUBACK before we presume loss
+pending_pubs = {}                # mid -> (topic, payload, queued_at)
+pending_lock = threading.Lock()
+# on_publish can theoretically fire before the publisher registers the mid
+# (callback runs on the network thread). Confirmed-but-unknown mids land here;
+# bounded because on_publish also fires for untracked publishes (logMQTT,
+# modemlog) whose mids we must not accumulate forever.
+early_acks = deque(maxlen=256)
+publish_timeouts = 0             # cumulative PUBACK timeouts, reported in modemlog
+
+def publish_tracked(client, topic, payload):
+    """Publish a powerlog message with full delivery tracking, non-blocking.
+
+    Hard rejection (rc != SUCCESS, e.g. NO_CONN): straight into the retry
+    queue - paho did not accept it. Soft path (rc == SUCCESS): register the
+    mid and let on_publish / the timeout sweep decide whether it truly landed.
+    Returns True if the message is in flight, False if it went to the queue.
+    """
+    with pending_lock:
+        try:
+            result = client.publish(topic, payload, qos=1)
+        except Exception as e:
+            print(f"publish raised: {e}")
+            queue_failed_publish(topic, payload)
+            return False
+        if result.rc != mqtt_client.MQTT_ERR_SUCCESS:
+            # Hard rejection: paho did NOT queue this (e.g. MQTT_ERR_NO_CONN).
+            queue_failed_publish(topic, payload)
+            return False
+        if result.mid in early_acks:
+            # PUBACK already came in before we could register - delivered.
+            try:
+                early_acks.remove(result.mid)
+            except ValueError:
+                pass
+            return True
+        pending_pubs[result.mid] = (topic, payload, time.time())
+        return True
+
+def on_publish(client, userdata, mid, reason_code=None, properties=None):
+    # VERSION2 signature: (client, userdata, mid, reason_code, properties) -
+    # verified against paho 2.1.0 source. Same five-argument rule that killed
+    # on_disconnect before; defaults keep it tolerant. Runs on the network
+    # thread: never let an exception escape, keep it fast.
+    try:
+        with pending_lock:
+            if mid in pending_pubs:
+                del pending_pubs[mid]
+            else:
+                # Untracked publish (logMQTT/modemlog) or the rare early ack.
+                early_acks.append(mid)
+    except Exception as e:
+        print(f"on_publish error: {e}")
+
+def sweep_pending():
+    """Move publishes without a PUBACK within PENDING_TIMEOUT to the retry queue.
+
+    Runs each powerLoop cycle. An unconfirmed message is presumed lost in
+    paho's inflight queue (the soft-rejection window); we take it back and
+    resend it ourselves. Possible duplicates are absorbed by the DB constraint.
+    """
+    global publish_timeouts
+    now = time.time()
+    expired = []
+    with pending_lock:
+        for mid, (topic, payload, queued_at) in list(pending_pubs.items()):
+            if now - queued_at > PENDING_TIMEOUT:
+                expired.append((topic, payload))
+                del pending_pubs[mid]
+    if expired:
+        with stats_lock:
+            publish_timeouts += len(expired)
+        with retry_lock:
+            for item in expired:
+                retry_queue.append(item)
+        print(f"PUBACK timeout on {len(expired)} message(s) - moved to retry queue")
+
+def drain_pending_to_retry():
+    """Move ALL pending publishes to the retry queue.
+
+    Called when the MQTT client is torn down (rebuild): the old client's
+    inflight state dies with it, so nothing pending will ever be confirmed.
+    """
+    with pending_lock:
+        items = [(t, p) for (t, p, _) in pending_pubs.values()]
+        pending_pubs.clear()
+    if items:
+        with retry_lock:
+            for item in items:
+                retry_queue.append(item)
+        print(f"Moved {len(items)} pending publish(es) to retry queue before client rebuild")
+
+
 def queue_failed_publish(topic, payload):
     """Store a powerlog message whose publish was rejected, for later retry."""
     with retry_lock:
@@ -132,18 +240,13 @@ def flush_retry_queue(client):
             if not retry_queue:
                 break
             topic, payload = retry_queue.popleft()
-        try:
-            result = client.publish(topic, payload, qos=1)
-            if result.rc != mqtt_client.MQTT_ERR_SUCCESS:
-                # Still no connection - put it back at the FRONT to preserve order.
-                with retry_lock:
-                    retry_queue.appendleft((topic, payload))
-                # No point hammering the rest this cycle if we're offline.
-                break
-        except Exception as e:
-            with retry_lock:
-                retry_queue.appendleft((topic, payload))
-            print(f"Retry flush error: {e}")
+        # publish_tracked: hard rejection puts it back in the queue itself;
+        # soft path registers the mid so a lost PUBACK re-queues it via the
+        # sweep. Either way nothing can silently vanish from here anymore.
+        if not publish_tracked(client, topic, payload):
+            # Link is down - the message is already re-queued (at the back;
+            # order across a failed flush round is not worth extra machinery,
+            # the payload carries its own timestamp). Stop hammering.
             break
 
 
@@ -493,6 +596,10 @@ def rebuild_mqtt_client():
     """
     global client
     print("Rebuilding MQTT client...")
+    # The old client's inflight state dies with it: whatever is still awaiting
+    # a PUBACK will never be confirmed. Reclaim it into the retry queue first
+    # so the new client re-delivers it (duplicates absorbed by the DB constraint).
+    drain_pending_to_retry()
     old_client = client
     try:
         old_client.loop_stop()
@@ -1130,12 +1237,10 @@ def publishPowerlog(client):
 
         print(f"Binary data size: {len(binary_data)} bytes")
         topicPower = f"{topicPowerBase}/{device_serial}/data"
-        result = client.publish(topicPower, binary_data, qos=1)
-        if result.rc != mqtt_client.MQTT_ERR_SUCCESS:
-            # rc=MQTT_ERR_NO_CONN: paho did NOT queue this. Hold it ourselves and
-            # retry next cycle, so a short connectivity dip no longer loses the
-            # measurement (this is the audit-gap fix).
-            queue_failed_publish(topicPower, binary_data)
+        # Tracked publish: hard rejections go to the retry queue immediately,
+        # soft losses (accepted but never PUBACK'ed) are caught by the sweep.
+        # bytes(): immutable snapshot, safe to hold in queues.
+        publish_tracked(client, topicPower, bytes(binary_data))
 
     except Exception as e:
         count_modbus_error()
@@ -1167,6 +1272,7 @@ def publishModemlog(client):
 
         with stats_lock:
             mb_errors = modbus_error_count
+            pub_timeouts = publish_timeouts
         with retry_lock:
             retry_depth = len(retry_queue)
 
@@ -1177,9 +1283,10 @@ def publishModemlog(client):
             "RSSI": rssi,
             "IMSI": int(imsi) if imsi.isdigit() else imsi,  # Add the full IMSI as a readable string
             "IP": wanip,
-            "modbusErrors": mb_errors,  # cumulative failed RTU reads since script start
-            "retryQueue": retry_depth,  # powerlog messages currently held for retry
-            "FW": "1.0.6"
+            "modbusErrors": mb_errors,   # cumulative failed RTU reads since script start
+            "retryQueue": retry_depth,   # powerlog messages currently held for retry
+            "pubTimeouts": pub_timeouts, # cumulative PUBACK timeouts (soft losses caught)
+            "FW": "1.0.7"
         }
         topicModem = f"{topicModemBase}/{routerSerial}/data"
         # qos=1 so modem/RSSI history around an outage is queued and delivered
@@ -1211,9 +1318,10 @@ def powerLoop():
     
     while True:
         try:
-            # Retry any previously-rejected messages first, so backlog goes out
-            # ahead of the fresh measurement. Non-blocking: stops as soon as the
-            # link is down again.
+            # Order matters: first reclaim publishes whose PUBACK never came
+            # (presumed lost in paho's inflight queue), then retry the backlog,
+            # then publish the fresh measurement. All non-blocking.
+            sweep_pending()
             flush_retry_queue(client)
             publishPowerlog(client)
         except Exception:
@@ -1281,6 +1389,7 @@ def setup_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
+    client.on_publish = on_publish  # PUBACK confirmation - the delivery proof
     # Let paho handle automatic reconnects with backoff from the network loop.
     client.reconnect_delay_set(min_delay=1, max_delay=60)
     # Cap the in-memory QoS1 queue so a multi-day outage can't grow it until
